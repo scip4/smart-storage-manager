@@ -14,8 +14,13 @@ def apply_rules_to_media(media_list, settings):
             item.status = 'protected'
             continue
 
+        # Rule: Archive ended shows
+        if item.type == 'tv' and item.status == 'Ended' and item.rule in ['archive-ended', 'auto-manage']:
+            item.status = 'candidate-archive'
+            continue
+            
         # Rule: Delete if on a preferred streaming service
-        if item.rule == 'delete-if-streaming' and item.streamingAvailability:
+        if item.rule == 'delete-if-streaming' and item.streamingServices:
             # A more robust check would see if it's on a *preferred* service
             item.status = 'candidate-delete'
             continue

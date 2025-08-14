@@ -12,7 +12,7 @@ class MediaItem:
     watchCount: int
     status: str = 'active'
     rule: str = 'auto-manage'
-    streamingAvailability: List[str] = field(default_factory=list)
+    streamingServices: List[str] = field(default_factory=list)
     filePath: Optional[str] = None
 
 @dataclass
@@ -20,13 +20,14 @@ class Show(MediaItem):
     type: str = 'tv'
     seasons: int = 0
     episodes: int = 0
-    sonarrId: Optional[int] = None  # --- NEW ---
+    sonarrId: Optional[int] = None
+    status: Optional[str] = None  # Added for Sonarr status (e.g., 'Ended')
 
 @dataclass
 class Movie(MediaItem):
     type: str = 'movie'
     year: Optional[int] = None
-    radarrId: Optional[int] = None  # --- NEW ---
+    radarrId: Optional[int] = None
 
 @dataclass
 class UpcomingRelease:

@@ -95,7 +95,7 @@ const MediaItemCard = ({ item, onRuleChange, onExecuteAction }) => {
                 </div>
             </div>
             <div className="flex items-center space-x-3 mt-4 md:mt-0">
-                <select 
+                <select
                     value={item.rule}
                     onChange={(e) => onRuleChange(item.id, e.target.value)}
                     className="text-sm border rounded px-2 py-1.5 min-w-[140px] bg-white hover:border-gray-400"
@@ -105,8 +105,12 @@ const MediaItemCard = ({ item, onRuleChange, onExecuteAction }) => {
                     <option value="archive-after-6months">Archive After 6 Months</option>
                     <option value="delete-after-watched">Delete After Watched</option>
                 </select>
-                <button onClick={() => onExecuteAction(item, 'archive')} className="p-2 bg-blue-100 text-blue-700 rounded hover:bg-blue-200" title="Archive"><Archive className="w-4 h-4" /></button>
-                <button onClick={() => onExecuteAction(item, 'delete')} className="p-2 bg-red-100 text-red-700 rounded hover:bg-red-200" title="Delete"><Trash2 className="w-4 h-4" /></button>
+                <button onClick={() => onExecuteAction(item, 'archive')} className="p-2 bg-blue-100 text-blue-700 rounded hover:bg-blue-200" title="Archive">
+                  <Archive className="w-4 h-4" />
+                </button>
+                <button onClick={() => onExecuteAction(item, 'delete')} className="p-2 bg-red-100 text-red-700 rounded hover:bg-red-200" title="Delete">
+                  <Trash2 className="w-4 h-4" />
+                </button>
             </div>
         </div>
     );
@@ -119,11 +123,17 @@ const SmartStorageManager = () => {
     const [storageData, setStorageData] = useState({ total: 0, used: 0, available: 0 });
     const [allContent, setAllContent] = useState([]);
     const [candidates, setCandidates] = useState([]);
+    const [endedShows, setEndedShows] = useState([]);
+    const [streamingMovies, setStreamingMovies] = useState([]);
     const [potentialSavings, setPotentialSavings] = useState(0);
     const [libraryStats, setLibraryStats] = useState({});
     const [upcomingReleases, setUpcomingReleases] = useState([]);
     const [settings, setSettings] = useState({});
     const [connectionStatus, setConnectionStatus] = useState({});
+    const [isArchiveDialogOpen, setIsArchiveDialogOpen] = useState(false);
+    const [archiveFolders, setArchiveFolders] = useState([]);
+    const [selectedArchiveFolder, setSelectedArchiveFolder] = useState('');
+    const [currentArchiveItem, setCurrentArchiveItem] = useState(null);
 
     // UI State
     const [activeTab, setActiveTab] = useState('dashboard');
@@ -143,6 +153,8 @@ const SmartStorageManager = () => {
                     const dashData = await response.json();
                     setStorageData(dashData.storageData);
                     setCandidates(dashData.candidates);
+                    setEndedShows(dashData.recommendedActions?.endedShows || []);
+                    setStreamingMovies(dashData.recommendedActions?.streamingMovies || []);
                     setPotentialSavings(dashData.potentialSavings);
                     setUpcomingReleases(dashData.upcomingReleases);
                     setLibraryStats(dashData.libraryStats);
@@ -165,17 +177,86 @@ const SmartStorageManager = () => {
 
     useEffect(() => { fetchDataForTab(activeTab); }, [activeTab, fetchDataForTab]);
 
-    const executeAction = async (item, action) => {
+   /* const fetchRootFolders = async (type) => {
         try {
-            const response = await fetch(`${API_BASE_URL}/content/${item.id}/action`, {
+            const response = await fetch(`${API_BASE_URL}/root-folders?type=${type}`);
+            const data = await response.json();
+            if (response.ok) {
+                setArchiveFolders(data.folders);
+                if (data.folders.length > 0) {
+                    setSelectedArchiveFolder(data.folders[0].path);
+                }
+            } else {
+                throw new Error(data.message || 'Failed to fetch root folders');
+            }
+        } catch (err) {
+            alert(`Error: ${err.message}`);
+        }
+    };
+*/
+    const openArchiveDialog = (item) => {
+        setCurrentArchiveItem(item);
+        setIsArchiveDialogOpen(true);
+        fetchRootFolders(item.type);
+    };
+
+    const handleArchiveConfirm = async () => {
+        if (!currentArchiveItem || !selectedArchiveFolder) return;
+        
+        try {
+            const payloadItem = {
+                id: currentArchiveItem.id,
+                title: currentArchiveItem.title,
+                type: currentArchiveItem.type,
+                filePath: currentArchiveItem.filePath,
+                sonarrId: currentArchiveItem.sonarrId,
+                radarrId: currentArchiveItem.radarrId
+            };
+            
+            const response = await fetch(`${API_BASE_URL}/content/${currentArchiveItem.id}/action`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action, item }),
+                body: JSON.stringify({
+                    action: 'archive',
+                    item: payloadItem,
+                    archivePath: selectedArchiveFolder
+                }),
             });
             const resData = await response.json();
-            if (!response.ok) { throw new Error(resData.message || `Failed to perform ${action}.`); }
+            if (!response.ok) { throw new Error(resData.message || `Failed to perform archive.`); }
             alert(resData.message);
             fetchDataForTab(activeTab);
+            setIsArchiveDialogOpen(false);
+        } catch (err) {
+            alert(`Error: ${err.message}`);
+        }
+    };
+
+    const executeAction = async (item, action) => {
+        try {
+            if (action === 'archive') {
+                openArchiveDialog(item);
+            } else if (action === 'delete') {
+                // Extract only necessary fields to reduce payload size
+                const payloadItem = {
+                    id: item.id,
+                    title: item.title,
+                    type: item.type,
+                    filePath: item.filePath,
+                    sonarrId: item.sonarrId,
+                    radarrId: item.radarrId
+                };
+                
+                const response = await fetch(`${API_BASE_URL}/content/${item.id}/action`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action, item: payloadItem }),
+                });
+                const resData = await response.json();
+                if (!response.ok) { throw new Error(resData.message || `Failed to perform ${action}.`); }
+                alert(resData.message);
+                fetchDataForTab(activeTab);
+            }
         } catch (err) { alert(`Error: ${err.message}`); }
     };
 
@@ -219,6 +300,46 @@ const SmartStorageManager = () => {
                     <div className="bg-white rounded-lg shadow-md p-6"><div className="flex items-center justify-between"><div><h3 className="text-lg font-semibold">Movies</h3><p className="text-2xl font-bold text-purple-600">{libraryStats.movies || 0}</p><p className="text-sm text-gray-600">{libraryStats.movies_size?.toFixed(1) || '0.0'} GB</p></div><Film className="w-8 h-8 text-purple-500" /></div></div>
                     <div className="bg-white rounded-lg shadow-md p-6"><div className="flex items-center justify-between"><div><h3 className="text-lg font-semibold">On Streaming</h3><p className="text-2xl font-bold text-green-600">{libraryStats.onStreaming || 0}</p></div><ExternalLink className="w-8 h-8 text-green-500" /></div></div>
                 </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="bg-white rounded-lg shadow-md p-6">
+                        <h3 className="text-lg font-semibold mb-4 flex items-center">
+                            <Tv className="w-5 h-5 mr-2 text-blue-500" />
+                            Largest Ended TV Shows
+                        </h3>
+                        <div className="space-y-3 max-h-96 overflow-y-auto">
+                            {endedShows.length > 0 ? endedShows.map(item => (
+                                <div key={`ended-${item.id}`} className="flex justify-between items-center p-3 border rounded">
+                                    <div className="flex-1">
+                                        <div className="font-medium">{item.title}</div>
+                                        <div className="text-sm text-gray-600">
+                                            {item.size} GB • {item.status}
+                                        </div>
+                                    </div>
+                                </div>
+                            )) : <div className="text-center text-gray-500 py-4">No ended shows found.</div>}
+                        </div>
+                    </div>
+                    
+                    <div className="bg-white rounded-lg shadow-md p-6">
+                        <h3 className="text-lg font-semibold mb-4 flex items-center">
+                            <Film className="w-5 h-5 mr-2 text-purple-500" />
+                            Largest Movies on Streaming
+                        </h3>
+                        <div className="space-y-3 max-h-96 overflow-y-auto">
+                            {streamingMovies.length > 0 ? streamingMovies.map(item => (
+                                <div key={`streaming-${item.id}`} className="flex justify-between items-center p-3 border rounded">
+                                    <div className="flex-1">
+                                        <div className="font-medium">{item.title}</div>
+                                        <div className="text-sm text-gray-600">
+                                            {item.size} GB • Available on: {item.streamingServices.join(', ')}
+                                        </div>
+                                    </div>
+                                </div>
+                            )) : <div className="text-center text-gray-500 py-4">No streaming movies found.</div>}
+                        </div>
+                    </div>
+                </div>
+                
                 <div className="bg-white rounded-lg shadow-md p-6">
                     <h3 className="text-lg font-semibold mb-4">Recommended Actions</h3>
                     <div className="space-y-3 max-h-96 overflow-y-auto">{candidates.length > 0 ? candidates.map(item => (<div key={`${item.type}-${item.id}`} className="flex justify-between items-center p-3 border rounded"><div className="flex-1"><div className="font-medium">{item.title}</div><div className="text-sm text-gray-600">{item.size} GB • Last watched: {item.lastWatched || 'Never'}</div></div><div className="flex space-x-2 ml-4">{item.status === 'candidate-delete' && <button onClick={() => executeAction(item, 'delete')} className="px-3 py-1 bg-red-500 text-white rounded text-sm hover:bg-red-600 flex items-center"><Trash2 className="w-3 h-3 mr-1" />Delete</button>}{item.status === 'candidate-archive' && <button onClick={() => executeAction(item, 'archive')} className="px-3 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600 flex items-center"><Archive className="w-3 h-3 mr-1" />Archive</button>}</div></div>)) : <div className="text-center text-gray-500 py-4">No cleanup actions recommended.</div>}</div>
@@ -234,7 +355,7 @@ const SmartStorageManager = () => {
         const [currentPage, setCurrentPage] = useState(1);
 
         const processedContent = useMemo(() => {
-            let filtered = allContent;
+            let filtered = allContent || [];
             if (contentFilter === 'tv') filtered = filtered.filter(item => item.type === 'tv');
             if (contentFilter === 'movies') filtered = filtered.filter(item => item.type === 'movie');
             if (searchTerm) { filtered = filtered.filter(item => item.title.toLowerCase().includes(searchTerm.toLowerCase())); }
@@ -284,6 +405,38 @@ const SmartStorageManager = () => {
             {activeTab === 'content' && <ContentManagement />}
             {activeTab === 'logs' && <LogViewer />}
             {activeTab === 'settings' && <SettingsPanel />}
+
+            {/* Archive Folder Selection Dialog */}
+            {isArchiveDialogOpen && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-lg p-6 w-full max-w-md">
+                        <h2 className="text-xl font-semibold mb-4">Select Archive Folder</h2>
+                        <select
+                            className="w-full border rounded px-3 py-2 mb-4"
+                            value={selectedArchiveFolder}
+                            onChange={(e) => setSelectedArchiveFolder(e.target.value)}
+                        >
+                            {archiveFolders.map(folder => (
+                                <option key={folder.path} value={folder.path}>{folder.path}</option>
+                            ))}
+                        </select>
+                        <div className="flex justify-end space-x-3">
+                            <button
+                                className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
+                                onClick={() => setIsArchiveDialogOpen(false)}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                                onClick={handleArchiveConfirm}
+                            >
+                                Archive
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

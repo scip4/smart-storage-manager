@@ -35,15 +35,15 @@ class SonarrAPI:
         except requests.exceptions.RequestException as e:
             logger.warning(f"Could not fetch episode files for seriesId {series_id}: {e}")
             return []
-    def get_series(self, series_id: int) -> List[Dict]:
-        """Gets all episode files for a single series."""
+    def get_series_by_id(self, series_id: int) -> Optional[Dict]:
+        """Get a single series by ID"""
         try:
-            response = self.session.get(f'{self.base_url}/api/v3/series', params={'seriesId': series_id})
+            response = self.session.get(f'{self.base_url}/api/v3/series/{series_id}')
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
-            logger.warning(f"Could not fetch episode files for seriesId {series_id}: {e}")
-            return []
+            logger.warning(f"Could not fetch series with ID {series_id}: {e}")
+            return None
 
 # --- Instantiate the API client at the module level for reuse ---
 BASE_URL = os.getenv('SONARR_URL')
@@ -56,9 +56,9 @@ else:
     logger.warning("Sonarr URL or API Key not configured in .env file.")
 
 # --- Public functions for the rest of the application to use ---
-def get_series_info(show_id: int) -> int:
+def get_series_size(show_id: int) -> int:
     """
-    Get the sizeOnDisk value for a specific series from Sonarr
+    Get the size on disk for a specific series from Sonarr
     
     Args:
         show_id: Sonarr series ID
@@ -66,12 +66,10 @@ def get_series_info(show_id: int) -> int:
     Returns:
         Size on disk in bytes (0 if not found)
     """
-    series_list = sonarr_api.get_series(show_id)
-    if not series_list:
+    series = sonarr_api.get_series_by_id(show_id)
+    if not series:
         return 0
         
-    # The response is a list of series, we take the first one
-    series = series_list[0]
     statistics = series.get('statistics', {})
     return statistics.get('sizeOnDisk', 0)
 
@@ -138,6 +136,28 @@ def update_show_root_folder(show_id: int, new_root_folder_path: str):
     except Exception as e:
         logger.error(f"Failed to update show ID {show_id} in Sonarr: {e}", exc_info=True)
         return False, f"Failed to update show in Sonarr: {e}"
+
+def get_series_title_id_map() -> Dict[str, int]:
+    """
+    Returns a dictionary mapping series titles to their Sonarr IDs.
+    
+    Returns:
+        Dictionary of {title: id}
+    """
+    series_list = sonarr_api.get_all_series()
+    return {series['title']: series['id'] for series in series_list}
+
+def get_root_folders() -> List[Dict]:
+    """Get all root folders from Sonarr"""
+    if not sonarr_api:
+        return []
+    try:
+        response = sonarr_api.session.get(f'{sonarr_api.base_url}/api/v3/rootfolder')
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        logger.error(f"Error getting Sonarr root folders: {e}", exc_info=True)
+        return []
 
 def get_upcoming_shows():
     # Placeholder - this function can remain for future use

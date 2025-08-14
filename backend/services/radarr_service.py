@@ -23,6 +23,26 @@ class RadarrAPI:
             logger.error(f"Radarr API error fetching movies: {e}", exc_info=True)
             return []
             
+    def get_movie_by_id(self, movie_id: int) -> Optional[Dict]:
+        """Get a single movie by ID"""
+        try:
+            response = self.session.get(f'{self.base_url}/api/v3/movie/{movie_id}')
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"Could not fetch movie with ID {movie_id}: {e}")
+            return None
+            
+    def get_root_folders(self) -> List[Dict]:
+        """Get all root folders from Radarr"""
+        try:
+            response = self.session.get(f'{self.base_url}/api/v3/rootfolder')
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error getting Radarr root folders: {e}")
+            return []
+
     def get_movie_files_for_movie(self, movie_id: int) -> List[Dict]:
         """Gets all movie files for a single movie."""
         try:
@@ -44,6 +64,39 @@ else:
     logger.warning("Radarr URL or API Key not configured in .env file.")
 
 # --- Public functions for the rest of the application to use ---
+
+def get_movie_size(movie_id: int) -> int:
+    """
+    Get the size on disk for a specific movie from Radarr
+    
+    Args:
+        movie_id: Radarr movie ID
+        
+    Returns:
+        Size on disk in bytes (0 if not found)
+    """
+    movie = radarr_api.get_movie_by_id(movie_id)
+    if not movie:
+        return 0
+        
+    movie_files = radarr_api.get_movie_files_for_movie(movie_id)
+    return sum(f.get('size', 0) for f in movie_files)
+
+def get_root_folders() -> List[Dict]:
+    """Get all root folders from Radarr"""
+    if not radarr_api:
+        return []
+    return radarr_api.get_root_folders()
+
+def get_movie_title_id_map() -> Dict[str, int]:
+    """
+    Returns a dictionary mapping movie titles to their Radarr IDs.
+    
+    Returns:
+        Dictionary of {title: id}
+    """
+    movies = radarr_api.get_all_movies()
+    return {movie['title']: movie['id'] for movie in movies}
 
 def get_library_summary() -> Dict:
     """

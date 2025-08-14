@@ -97,7 +97,7 @@ def get_dashboard_data():
     all_media = plex_service.get_plex_library()
     analyzed_media = analysis_service.apply_rules_to_media(all_media, settings)
     
-    candidates = [item.__dict__ for item in analyzed_media if 'candidate' in item.status]
+    candidates = [item.__dict__ for item in analyzed_media if item.status and 'candidate' in item.status]
     potential_savings = sum(c['size'] for c in candidates)
     
     # --- REAL STORAGE DATA ---
@@ -123,21 +123,45 @@ def get_dashboard_data():
     
     upcoming = sonarr_service.get_upcoming_shows()
     
+    # Recommended actions: largest ended shows and largest movies on streaming
+    ended_shows = [item for item in analyzed_media
+                   if item.type == 'tv' and item.status == 'ended']
+    ended_shows_sorted = sorted(ended_shows, key=lambda x: x.size, reverse=True)[:5]
+    
+    streaming_movies = [item for item in analyzed_media
+                        if item.type == 'movie' and item.streamingServices]
+    streaming_movies_sorted = sorted(streaming_movies, key=lambda x: x.size, reverse=True)[:5]
+
     return jsonify({
-        'storageData': storage_data.__dict__, # This now contains REAL data
+        'storageData': storage_data.__dict__,
         'potentialSavings': round(potential_savings, 2),
         'candidates': candidates,
         'upcomingReleases': upcoming,
         'libraryStats': {
-            'tv': tv_shows, #len([m for m in all_media if m.type == 'tv']),
+            'tv': tv_shows,
             'tv_size': round(tv_shows_size_gb, 1),
             'tv_episodes': tv_shows_episodes,
-            'movies': movies, #len([m for m in all_media if m.type == 'movie']),
+            'movies': movies,
             'movies_size': round(movies_size_gb, 1),
-            'onStreaming': len([m for m in all_media if m.streamingAvailability]),
+            'onStreaming': len([m for m in all_media if m.streamingServices]),
+        },
+        'recommendedActions': {
+            'endedShows': [item.__dict__ for item in ended_shows_sorted],
+            'streamingMovies': [item.__dict__ for item in streaming_movies_sorted]
         }
     })
 
+
+@app.route('/api/root-folders')
+def get_root_folders():
+    folder_type = request.args.get('type', 'tv')
+    if folder_type == 'tv':
+        folders = sonarr_service.get_root_folders()
+    elif folder_type == 'movie':
+        folders = radarr_service.get_root_folders()
+    else:
+        folders = []
+    return jsonify({'folders': folders})
 
 @app.route('/api/content')
 def get_content_data():
@@ -172,7 +196,8 @@ def handle_action(media_id):
             
     elif action == 'archive':
         settings = load_settings()
-        archive_path = settings.get('archiveFolderPath')
+        # Get archive path from request or settings
+        archive_path = data.get('archivePath', settings.get('archiveFolderPath'))
         if not archive_path:
             logging.error(f"Archive failed for '{item_title}': Archive folder path is not configured.")
             return jsonify({'status': 'error', 'message': 'Archive folder path is not configured.'}), 400
@@ -195,9 +220,47 @@ def handle_action(media_id):
                 update_message = f"Files moved, but Sonarr ID was missing. Please update Sonarr manually for show '{item_title}'."
                 logging.warning(update_message)
             else:
-                update_success, update_message = sonarr_service.update_show_root_folder(sonarr_id, new_folder_path)
+                # Get Sonarr root folders
+                root_folders = sonarr_service.get_root_folders()
+                folder_paths = [folder['path'] for folder in root_folders]
+                
+                # Check if new path is in Sonarr's root folders
+                if new_folder_path not in folder_paths:
+                    if root_folders:
+                        new_root_folder = root_folders[0]['path']
+                        logging.info(f"Selected root folder '{new_root_folder}' for show ID {sonarr_id}")
+                    else:
+                        update_message = "No root folders available in Sonarr"
+                        logging.error(update_message)
+                        return jsonify({'status': 'error', 'message': update_message}), 400
+                else:
+                    new_root_folder = new_folder_path
+                
+                update_success, update_message = sonarr_service.update_show_root_folder(sonarr_id, new_root_folder)
         
-        # Add Radarr logic here...
+        elif item_type == 'movie':
+            radarr_id = item_to_action.get('radarrId')
+            if not radarr_id:
+                update_message = f"Files moved, but Radarr ID was missing. Please update Radarr manually for movie '{item_title}'."
+                logging.warning(update_message)
+            else:
+                # Get Radarr root folders
+                root_folders = radarr_service.radarr_api.get_root_folders()
+                folder_paths = [folder['path'] for folder in root_folders]
+                
+                # Check if new path is in Radarr's root folders
+                if new_folder_path not in folder_paths:
+                    if root_folders:
+                        new_root_folder = root_folders[0]['path']
+                        logging.info(f"Selected root folder '{new_root_folder}' for movie ID {radarr_id}")
+                    else:
+                        update_message = "No root folders available in Radarr"
+                        logging.error(update_message)
+                        return jsonify({'status': 'error', 'message': update_message}), 400
+                else:
+                    new_root_folder = new_folder_path
+                
+                update_success, update_message = radarr_service.update_movie_root_folder(radarr_id, new_root_folder)
 
         if not update_success:
              return jsonify({'status': 'warning', 'message': update_message}), 207
