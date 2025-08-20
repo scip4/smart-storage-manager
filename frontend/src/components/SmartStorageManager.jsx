@@ -75,7 +75,7 @@ const LogViewer = () => {
 };
 
 const MediaItemCard = ({ item, onRuleChange, onExecuteAction }) => {
-    const isCandidate = item.status.includes('candidate');
+    const isCandidate = item.status ? item.status.includes('candidate') : false;
 
     return (
         <div className={`flex flex-col md:flex-row justify-between items-center p-4 border rounded-lg shadow-sm ${isCandidate ? 'bg-yellow-50 border-yellow-200' : 'bg-white'}`}>
@@ -177,7 +177,7 @@ const SmartStorageManager = () => {
 
     useEffect(() => { fetchDataForTab(activeTab); }, [activeTab, fetchDataForTab]);
 
-   /* const fetchRootFolders = async (type) => {
+   const fetchRootFolders = async (type) => {
         try {
             const response = await fetch(`${API_BASE_URL}/root-folders?type=${type}`);
             const data = await response.json();
@@ -193,11 +193,10 @@ const SmartStorageManager = () => {
             alert(`Error: ${err.message}`);
         }
     };
-*/
     const openArchiveDialog = (item) => {
         setCurrentArchiveItem(item);
         setIsArchiveDialogOpen(true);
-        fetchRootFolders(item.type);
+        fetchRootFolders(item.type === 'tv' ? 'sonarr' : 'radarr');
     };
 
     const handleArchiveConfirm = async () => {
@@ -389,8 +388,67 @@ const SmartStorageManager = () => {
         return (
             <div className="space-y-6">
                 <div className="bg-white rounded-lg shadow-md p-6"><h3 className="text-lg font-semibold mb-4">Connection Status</h3><div className="grid grid-cols-1 md:grid-cols-3 gap-4">{Object.entries(connectionStatus).map(([service, status]) => (<div key={service} className={`p-3 border rounded ${status === 'Connected' ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}><div className={`font-medium ${status === 'Connected' ? 'text-green-800' : 'text-red-800'}`}>{service.charAt(0).toUpperCase() + service.slice(1)}: {status}</div></div>))}</div></div>
-                <div className="bg-white rounded-lg shadow-md p-6"><h2 className="text-xl font-semibold mb-4">Archive Settings</h2><div><label htmlFor="archive-path" className="block text-sm font-medium mb-2">Archive Folder Path</label><input type="text" id="archive-path" placeholder="/path/to/cold-storage" value={settings.archiveFolderPath || ''} onChange={(e) => setSettings({ ...settings, archiveFolderPath: e.target.value })} className="w-full border rounded px-3 py-2" /><p className="text-xs text-gray-500 mt-1">The full path where archived content will be moved.</p></div></div>
-                <button onClick={handleSaveSettings} className="w-full bg-blue-500 text-white rounded py-3 hover:bg-blue-600 font-medium">Save All Settings</button>
+                <div className="bg-white rounded-lg shadow-md p-6">
+                    <h2 className="text-xl font-semibold mb-4">Archive Folders</h2>
+                    
+                    <div className="mb-6">
+                        <h3 className="text-lg font-semibold mb-2">TV Shows</h3>
+                        <div className="space-y-2">
+                            {settings.tvArchiveFolders?.map((folder, index) => (
+                                <div key={`tv-${index}`} className="flex items-center">
+                                    <div className="flex items-center justify-between w-full">
+                                        <span className="text-gray-700 flex-1">{folder}</span>
+                                        <button
+                                            onClick={() => removeArchiveFolder('tv', index)}
+                                            className="text-red-500 hover:text-red-700"
+                                        >
+                                            <X className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                            {(!settings.tvArchiveFolders || settings.tvArchiveFolders.length === 0) && (
+                                <p className="text-gray-500">No TV archive folders configured</p>
+                            )}
+                        </div>
+                        <button
+                            onClick={() => fetchRootFolders('sonarr')}
+                            className="mt-2 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                        >
+                            Add from Sonarr
+                        </button>
+                    </div>
+                    
+                    <div className="mb-6">
+                        <h3 className="text-lg font-semibold mb-2">Movies</h3>
+                        <div className="space-y-2">
+                            {settings.movieArchiveFolders?.map((folder, index) => (
+                                <div key={`movie-${index}`} className="flex items-center">
+                                    <div className="flex items-center justify-between w-full">
+                                        <span className="text-gray-700 flex-1">{folder}</span>
+                                        <button
+                                            onClick={() => removeArchiveFolder('movie', index)}
+                                            className="text-red-500 hover:text-red-700"
+                                        >
+                                            <X className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                            {(!settings.movieArchiveFolders || settings.movieArchiveFolders.length === 0) && (
+                                <p className="text-gray-500">No movie archive folders configured</p>
+                            )}
+                        </div>
+                        <button
+                            onClick={() => fetchRootFolders('radarr')}
+                            className="mt-2 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                        >
+                            Add from Radarr
+                        </button>
+                    </div>
+                    
+                    <button onClick={handleSaveSettings} className="w-full bg-blue-500 text-white rounded py-3 hover:bg-blue-600 font-medium">Save All Settings</button>
+                </div>
             </div>
         );
     };

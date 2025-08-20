@@ -15,7 +15,7 @@ def apply_rules_to_media(media_list, settings):
             continue
 
         # Rule: Archive ended shows
-        if item.type == 'tv' and item.status == 'Ended' and item.rule in ['archive-ended', 'auto-manage']:
+        if item.type == 'tv' and (item.status == 'ended' or item.status == 'Ended') and item.rule in ['archive-ended', 'auto-manage']:
             item.status = 'candidate-archive'
             continue
             

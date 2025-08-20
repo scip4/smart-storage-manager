@@ -44,13 +44,16 @@ def get_default_settings():
     return {
         "autoDeleteAfterDays": 30, "archiveAfterMonths": 6, "keepFreeSpace": 500,
         "enableAutoActions": False, "checkStreamingAvailability": True,
-        "preferredStreamingServices": [], "archiveFolderPath": ""
+        "preferredStreamingServices": [], "archiveFolderPath": "",
+        "tvArchiveFolders": [],
+        "movieArchiveFolders": []
     }
 
 def load_settings():
     try:
         with open(SETTINGS_FILE, 'r') as f:
             defaults = get_default_settings()
+            #defaults
             user_settings = json.load(f)
             defaults.update(user_settings)
             return defaults
@@ -152,16 +155,7 @@ def get_dashboard_data():
     })
 
 
-@app.route('/api/root-folders')
-def get_root_folders():
-    folder_type = request.args.get('type', 'tv')
-    if folder_type == 'tv':
-        folders = sonarr_service.get_root_folders()
-    elif folder_type == 'movie':
-        folders = radarr_service.get_root_folders()
-    else:
-        folders = []
-    return jsonify({'folders': folders})
+# Removed duplicate route definition
 
 @app.route('/api/content')
 def get_content_data():
@@ -178,8 +172,41 @@ def handle_settings():
         logging.info("Saving settings.")
         save_settings(new_settings)
         return jsonify(new_settings)
+    
     logging.debug("Settings data requested.")
-    return jsonify(load_settings())
+    settings = load_settings()
+    
+    # Get TV and movie archive folders from environment variables
+    settings['tvArchiveFolders'] = [f for f in os.getenv('TV_ARCHIVE_FOLDERS', '').split(',') if f]
+    settings['movieArchiveFolders'] = [f for f in os.getenv('MOVIE_ARCHIVE_FOLDERS', '').split(',') if f]
+    
+    return jsonify(settings)
+
+@app.route('/api/root-folders', methods=['GET'])
+def get_service_root_folders():
+    service_type = request.args.get('type')
+    if service_type == 'sonarr':
+        # Get root folders from Sonarr
+        return jsonify({'folders': get_sonarr_root_folders()})
+    elif service_type == 'radarr':
+        # Get root folders from Radarr
+        return jsonify({'folders': get_radarr_root_folders()})
+    else:
+        return jsonify({'error': 'Invalid service type'}), 400
+
+def get_sonarr_root_folders():
+    """Get TV archive folders from environment variable"""
+    folders = os.getenv('TV_ARCHIVE_FOLDERS', '')
+    if folders:
+        return [{'path': f.strip()} for f in folders.split(',') if f.strip()]
+    return []
+
+def get_radarr_root_folders():
+    """Get movie archive folders from environment variable"""
+    folders = os.getenv('MOVIE_ARCHIVE_FOLDERS', '')
+    if folders:
+        return [{'path': f.strip()} for f in folders.split(',') if f.strip()]
+    return []
 
 @app.route('/api/content/<media_id>/action', methods=['POST'])
 def handle_action(media_id):
@@ -187,6 +214,13 @@ def handle_action(media_id):
     action = data.get('action')
     item_to_action = data.get('item', {})
     item_title = item_to_action.get('title', f"ID {media_id}")
+    item_type = item_to_action.get('type')
+    if item_type == 'tv':
+        sonarr_title_id_map = sonarr_service.get_series_title_id_map()
+        item_id = sonarr_title_id_map.get(item_title)
+    else: item_to_action.get('id', f"ID {media_id}")
+
+    #item_id = sonarr_service.get_series_title_id_map() s if item_type == 'tv' else item_to_action.get('id', f"ID {media_id}")
     logging.info(f"Action '{action}' requested for item '{item_title}'")
     
     if action == 'delete':
@@ -196,22 +230,46 @@ def handle_action(media_id):
             
     elif action == 'archive':
         settings = load_settings()
-        # Get archive path from request or settings
-        archive_path = data.get('archivePath', settings.get('archiveFolderPath'))
-        if not archive_path:
-            logging.error(f"Archive failed for '{item_title}': Archive folder path is not configured.")
-            return jsonify({'status': 'error', 'message': 'Archive folder path is not configured.'}), 400
+        settings['tvArchiveFolders'] = [f for f in os.getenv('TV_ARCHIVE_FOLDERS', '').split(',') if f]
+        settings['movieArchiveFolders'] = [f for f in os.getenv('MOVIE_ARCHIVE_FOLDERS', '').split(',') if f]
+ 
+        # Get the item type from the item_to_action
+        
+        # Now get archive folders based on media type
+        archive_folders = settings['tvArchiveFolders'] if item_type == 'tv' else settings['movieArchiveFolders']
+        if not archive_folders:
+            error_msg = f"No archive folders configured for {item_type} content"
+            logging.error(f"Archive failed for '{item_title}': {error_msg}")
+            return jsonify({'status': 'error', 'message': error_msg}), 400
+        
+        # Use the selected archive folder from the request
+        selected_archive_folder = data.get('archivePath')
+        if not selected_archive_folder:
+            error_msg = "No archive folder selected in the request"
+            logging.error(f"Archive failed for '{item_title}': {error_msg}")
+            return jsonify({'status': 'error', 'message': error_msg}), 400
+            
+        # Validate the selected folder is in the configured folders
+        if selected_archive_folder not in archive_folders:
+            error_msg = f"Selected folder is not in configured {item_type} archive folders"
+            logging.error(f"Archive failed for '{item_title}': {error_msg}")
+            return jsonify({'status': 'error', 'message': error_msg}), 400
+            
+        logging.info(f"Using selected archive path: {selected_archive_folder} for {item_title}")
         if not item_to_action or not item_to_action.get('filePath'):
             logging.error(f"Archive failed for '{item_title}': Could not find media item file path.")
             return jsonify({'status': 'error', 'message': 'Could not find media item file path.'}), 404
 
         current_folder_path = os.path.dirname(item_to_action['filePath'])
-        move_success, move_result = file_service.move_to_archive(current_folder_path, archive_path)
+
+
+
+        move_success, move_result = file_service.move_sonarr_series(current_folder_path, selected_archive_folder, item_id)  #file_service.move_to_archive(current_folder_path, selected_archive_folder)
         if not move_success:
             return jsonify({'status': 'error', 'message': f"File move failed: {move_result}"}), 500
         
         new_folder_path = move_result
-        item_type = item_to_action.get('type')
+        # We removed the assignment of item_type here because we already set it above
         update_success, update_message = False, "Item type not supported for automated update."
 
         if item_type == 'tv':

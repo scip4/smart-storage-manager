@@ -5,6 +5,36 @@ from plexapi.server import PlexServer
 from models import Show, Movie
 from services import sonarr_service, radarr_service
 
+def is_tv_archive_folder(path: str) -> bool:
+    """Check if a path is listed in TV_ARCHIVE_FOLDERS environment variable"""
+    if not path:
+        return False
+        
+    tv_folders = os.getenv('TV_ARCHIVE_FOLDERS', '')
+    if not tv_folders:
+        return False
+    
+    # Normalize paths for comparison
+    normalized_path = os.path.normpath(path)
+    archive_paths = [os.path.normpath(f.strip()) for f in tv_folders.split(',') if f.strip()]
+    
+    return normalized_path in archive_paths
+
+def is_movie_archive_folder(path: str) -> bool:
+    """Check if a path is listed in MOVIE_ARCHIVE_FOLDERS environment variable"""
+    if not path:
+        return False
+        
+    movie_folders = os.getenv('MOVIE_ARCHIVE_FOLDERS', '')
+    if not movie_folders:
+        return False
+    
+    # Normalize paths for comparison
+    normalized_path = os.path.normpath(path)
+    archive_paths = [os.path.normpath(f.strip()) for f in movie_folders.split(',') if f.strip()]
+    
+    return normalized_path in archive_paths
+
 # Helper function to check streaming availability
 def check_streaming_availability(title: str, media_type: str) -> list:
     """
@@ -89,7 +119,7 @@ def get_plex_library():
                 sonarr_id = sonarr_title_id_map.get(show.title)
                 show_status = None
                 size_gb = 0
-                
+                spath = sonarr_service.get_series_root_folder(sonarr_id)
                 # Get show status from Sonarr if available
                 if sonarr_id:
                     try:
@@ -118,8 +148,9 @@ def get_plex_library():
                     lastWatched=show.lastViewedAt.strftime('%Y-%m-%d') if show.lastViewedAt else None,
                     watchCount=show.viewCount,
                     filePath=show.locations[0] if show.locations else None,
+                    rootFolderPath=spath,
                     sonarrId=sonarr_id,
                     streamingServices=streaming_services,
-                    status=show_status
+                    status= 'archive-ended' if is_tv_archive_folder(spath) == True else show_status
                 ))
     return all_media

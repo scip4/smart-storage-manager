@@ -112,6 +112,38 @@ def get_library_summary() -> Dict:
         'total_series': total_series
     }
 
+
+def move_sonarr_series(current_path, archive_root_path, show_id):
+    """Updates a series's root folder path and triggers a file move in Sonarr."""
+    if not sonarr_api:
+        return False, "Sonarr not configured."
+    
+    try:
+        # Get the show data
+        show_res = sonarr_api.session.get(f'{sonarr_api.base_url}/api/v3/series/{show_id}')
+        show_res.raise_for_status()
+        show_data = show_res.json()
+        series_title = show_data['title']  # Fixed: use show_data instead of show_res
+        
+        # Update the show_data with the new path and root folder
+        show_data['rootFolderPath'] = archive_root_path
+        show_data["path"] = f"{archive_root_path}/{series_title}"
+        
+        # Use the sonarr_api session to update
+        update_res = sonarr_api.session.put(
+            f'{sonarr_api.base_url}/api/v3/series/{show_id}',
+            json=show_data,
+            params={'moveFiles': 'true'},
+            timeout=60
+        )
+        update_res.raise_for_status()
+        logger.info(f"Successfully moved series '{series_title}' to {archive_root_path}")
+        return True, f"Successfully moved series '{series_title}'"
+    except Exception as e:
+        logger.error(f"Failed to move series ID {show_id}: {e}", exc_info=True)
+        return False, f"Failed to move series: {e}"
+
+
 def update_show_root_folder(show_id: int, new_root_folder_path: str):
     """Updates a show in Sonarr to point to a new root folder."""
     if not sonarr_api:
@@ -158,6 +190,23 @@ def get_root_folders() -> List[Dict]:
     except Exception as e:
         logger.error(f"Error getting Sonarr root folders: {e}", exc_info=True)
         return []
+
+def get_series_root_folder(series_id: int) -> Optional[str]:
+    """Get the root folder path for a specific Sonarr series"""
+    if not sonarr_api:
+        return None
+    try:
+        # Fetch series details
+        response = sonarr_api.session.get(f"{sonarr_api.base_url}/api/v3/series/{series_id}")
+        if response.status_code == 200:
+            series_data = response.json()
+            return series_data.get('rootFolderPath')
+        else:
+            logging.error(f"Failed to get series data for ID {series_id}: {response.status_code}")
+            return None
+    except Exception as e:
+        logging.error(f"Error fetching series root folder: {e}")
+        return None
 
 def get_upcoming_shows():
     # Placeholder - this function can remain for future use

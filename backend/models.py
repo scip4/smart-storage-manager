@@ -14,6 +14,7 @@ class MediaItem:
     rule: str = 'auto-manage'
     streamingServices: List[str] = field(default_factory=list)
     filePath: Optional[str] = None
+    rootFolderPath: Optional[str] = None
 
 @dataclass
 class Show(MediaItem):
@@ -22,6 +23,7 @@ class Show(MediaItem):
     episodes: int = 0
     sonarrId: Optional[int] = None
     status: Optional[str] = None  # Added for Sonarr status (e.g., 'Ended')
+    
 
 @dataclass
 class Movie(MediaItem):
