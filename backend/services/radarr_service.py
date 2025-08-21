@@ -158,7 +158,52 @@ def update_movie_root_folder(movie_id: int, new_root_folder_path: str):
     except Exception as e:
         logger.error(f"Failed to update movie ID {movie_id} in Radarr: {e}", exc_info=True)
         return False, f"Failed to update movie in Radarr: {e}"
+def get_movie_root_folder(movie_id: int) -> Optional[str]:
+    """Get the root folder path for a specific Radarr movie"""
+    if not radarr_api:
+        return None
+    try:
+        # Fetch movie details
+        response = radarr_api.session.get(f"{radarr_api.base_url}/api/v3/movie/{movie_id}")
+        if response.status_code == 200:
+            movie_data = response.json()
+            return movie_data.get('rootFolderPath')
+        else:
+            logger.error(f"Failed to get movie data for ID {movie_id}: {response.status_code}")
+            return None
+    except Exception as e:
+        logger.error(f"Error fetching movie root folder: {e}", exc_info=True)
+        return None
 
+def move_radarr_movie(current_path, archive_root_path, movie_id):
+    """Updates a movie's root folder path and triggers a file move in Radarr."""
+    if not radarr_api:
+        return False, "Radarr not configured."
+    
+    try:
+        # Get the movie data
+        movie_res = radarr_api.session.get(f'{radarr_api.base_url}/api/v3/movie/{movie_id}')
+        movie_res.raise_for_status()
+        movie_data = movie_res.json()
+        movie_title = movie_data['title']
+        
+        # Update the movie_data with the new path and root folder
+        movie_data['rootFolderPath'] = archive_root_path
+        movie_data["path"] = f"{archive_root_path}/{movie_title}"
+        
+        # Use the radarr_api session to update
+        update_res = radarr_api.session.put(
+            f'{radarr_api.base_url}/api/v3/movie/{movie_id}',
+            json=movie_data,
+            params={'moveFiles': 'true'},
+            timeout=60
+        )
+        update_res.raise_for_status()
+        logger.info(f"Successfully moved movie '{movie_title}' to {archive_root_path}")
+        return True, f"Successfully moved movie '{movie_title}'"
+    except Exception as e:
+        logger.error(f"Failed to move movie ID {movie_id}: {e}", exc_info=True)
+        return False, f"Failed to move movie: {e}"
 def get_upcoming_movies():
     # Placeholder - this function can remain for future use
     return []

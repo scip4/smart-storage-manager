@@ -70,8 +70,18 @@ def check_streaming_availability(title: str, media_type: str) -> list:
         response = requests.get(providers_url, params={'api_key': API_KEY})
         response.raise_for_status()
         providers = response.json().get('results', {}).get('US', {}).get('flatrate', [])
+        provider_names = [provider['provider_name'] for provider in providers]
         
-        return [provider['provider_name'] for provider in providers]
+        # Filter by STREAMING_PROVIDERS if set
+        streaming_providers_env = os.getenv('STREAMING_PROVIDERS')
+        if streaming_providers_env:
+            # Split, trim, and lowercase for case-insensitive matching
+            allowed_providers = [p.strip().lower() for p in streaming_providers_env.split(',')]
+            # Filter provider names
+            provider_names = [name for name in provider_names
+                             if name.strip().lower() in allowed_providers]
+        
+        return provider_names
     except Exception as e:
         print(f"Error checking streaming availability: {e}")
         return []
@@ -102,6 +112,8 @@ def get_plex_library():
         if section.type == 'movie':
             for movie in section.all():
                 size_gb = movie.media[0].parts[0].size / (1024**3) if movie.media else 0
+                movie_id = radarr_title_id_map.get(movie.title)
+                spath = radarr_service.get_movie_root_folder(movie_id)
                 # Check streaming availability
                 streaming_services = check_streaming_availability(movie.title, 'movie')
                 
@@ -112,7 +124,10 @@ def get_plex_library():
                     watchCount=movie.viewCount,
                     filePath=movie.media[0].parts[0].file if movie.media else None,
                     radarrId=radarr_title_id_map.get(movie.title),
-                    streamingServices=streaming_services
+                    rootFolderPath=spath,
+                    streamingServices=streaming_services,
+                    rule= 'delete-if-streaming' if streaming_services else None,
+                    #status=movie.status
                 ))
         elif section.type == 'show':
             for show in section.all():

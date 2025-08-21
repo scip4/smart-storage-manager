@@ -22,6 +22,10 @@ def get_drive_usage(path: str) -> Dict:
     except Exception as e:
         logger.error(f"Could not get disk usage for '{path}': {e}", exc_info=True)
         return None
+def get_archive_stats() -> Dict:
+    archive_drive_str= os.getenv('ARCHIVE_DRIVE', '')
+    return get_drive_usage(archive_drive_str)
+
 
 def get_combined_disk_usage() -> Dict:
     """

@@ -6,6 +6,13 @@ const ITEMS_PER_PAGE = 10;
 
 // --- Helper Components ---
 
+const formatStorage = (gb) => {
+  if (gb >= 1000) {
+    return (gb / 1000).toFixed(1) + ' TB';
+  }
+  return gb.toFixed(1) + ' GB';
+};
+
 const LoadingSpinner = () => (
   <div className="flex justify-center items-center p-10">
     <RefreshCw className="w-8 h-8 text-blue-500 animate-spin" />
@@ -121,6 +128,7 @@ const MediaItemCard = ({ item, onRuleChange, onExecuteAction }) => {
 const SmartStorageManager = () => {
     // Data State
     const [storageData, setStorageData] = useState({ total: 0, used: 0, available: 0 });
+    const [archiveData, setArchiveData] = useState({ used: 0, total: 0, available: 0 });
     const [allContent, setAllContent] = useState([]);
     const [candidates, setCandidates] = useState([]);
     const [endedShows, setEndedShows] = useState([]);
@@ -152,6 +160,7 @@ const SmartStorageManager = () => {
                     if (!response.ok) throw new Error(`API Error: ${response.statusText}`);
                     const dashData = await response.json();
                     setStorageData(dashData.storageData);
+                    setArchiveData(dashData.archiveData);
                     setCandidates(dashData.candidates);
                     setEndedShows(dashData.recommendedActions?.endedShows || []);
                     setStreamingMovies(dashData.recommendedActions?.streamingMovies || []);
@@ -279,10 +288,14 @@ const SmartStorageManager = () => {
                 <div className="bg-white rounded-lg shadow-md p-6">
                     <h2 className="text-xl font-semibold flex items-center mb-4"><HardDrive className="w-5 h-5 mr-2" />Storage Overview</h2>
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                        <div className="text-center"><div className="text-2xl font-bold text-blue-600">{storageData.used?.toFixed(1)} GB</div><div className="text-gray-600">Used</div></div>
-                        <div className="text-center"><div className="text-2xl font-bold text-green-600">{storageData.available?.toFixed(1)} GB</div><div className="text-gray-600">Available</div></div>
-                        <div className="text-center"><div className="text-2xl font-bold text-orange-600">{potentialSavings.toFixed(1)} GB</div><div className="text-gray-600">Potential Savings</div></div>
-                        <div className="text-center"><div className="text-2xl font-bold text-gray-800">{storageData.total?.toFixed(1)} GB</div><div className="text-gray-600">Total</div></div>
+                        <div className="text-center"><div className="text-2xl font-bold text-blue-600">{formatStorage(storageData.used)}</div><div className="text-gray-600">Main Used</div></div>
+                        <div className="text-center"><div className="text-2xl font-bold text-green-600">{formatStorage(storageData.available)}</div><div className="text-gray-600">Main Available</div></div>
+                        <div className="text-center"><div className="text-2xl font-bold text-orange-600">{formatStorage(potentialSavings)}</div><div className="text-gray-600">Potential Savings</div></div>
+                        <br></br>
+                        
+                        <div className="text-center"><div className="text-2xl font-bold text-gray-800">{formatStorage(archiveData.total)}</div><div className="text-gray-600">Archive Total</div></div>
+                        <div className="text-center"><div className="text-2xl font-bold text-purple-600">{formatStorage(archiveData.used)}</div><div className="text-gray-600">Archive Used</div></div>
+                        <div className="text-center"><div className="text-2xl font-bold text-black-600">{formatStorage(archiveData.available)}</div><div className="text-gray-600">Archive Available</div></div>                    
                     </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

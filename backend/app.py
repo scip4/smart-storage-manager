@@ -106,7 +106,6 @@ def get_dashboard_data():
     # --- REAL STORAGE DATA ---
     # Call our new service to get actual disk usage in bytes
     disk_stats_bytes = storage_service.get_combined_disk_usage()
-
     # Convert bytes to Gigabytes for the API response
     storage_data = StorageInfo(
         total=disk_stats_bytes['total'] / (1024**3),
@@ -114,6 +113,17 @@ def get_dashboard_data():
         available=disk_stats_bytes['free'] / (1024**3)
     )
     
+    # Get archive drive stats with error handling
+    archive_drive_stats = storage_service.get_archive_stats()
+    if archive_drive_stats:
+        archive_data = StorageInfo(
+            total=archive_drive_stats['total'] / (1024**3),
+            used=archive_drive_stats['used'] / (1024**3),
+            available=archive_drive_stats['free'] / (1024**3)
+        )
+    else:
+        # Default to zero values if archive stats unavailable
+        archive_data = StorageInfo(total=0, used=0, available=0)
     # Get media library stats (this is separate from total disk usage)
     sonarr_summary = sonarr_service.get_library_summary()
     tv_shows_size_gb = sonarr_summary['total_gb']
@@ -132,11 +142,12 @@ def get_dashboard_data():
     ended_shows_sorted = sorted(ended_shows, key=lambda x: x.size, reverse=True)[:5]
     
     streaming_movies = [item for item in analyzed_media
-                        if item.type == 'movie' and item.streamingServices]
+                        if item.type == 'movie' and item.status =='delete-if-streaming']
     streaming_movies_sorted = sorted(streaming_movies, key=lambda x: x.size, reverse=True)[:5]
 
     return jsonify({
         'storageData': storage_data.__dict__,
+        'archiveData': archive_data.__dict__,
         'potentialSavings': round(potential_savings, 2),
         'candidates': candidates,
         'upcomingReleases': upcoming,
@@ -218,8 +229,9 @@ def handle_action(media_id):
     if item_type == 'tv':
         sonarr_title_id_map = sonarr_service.get_series_title_id_map()
         item_id = sonarr_title_id_map.get(item_title)
-    else: item_to_action.get('id', f"ID {media_id}")
-
+    else: 
+        radarr_title_id_map = radarr_service.get_movie_title_id_map() #item_to_action.get('id', f"ID {media_id}")
+        item_id = radarr_title_id_map.get(item_title)
     #item_id = sonarr_service.get_series_title_id_map() s if item_type == 'tv' else item_to_action.get('id', f"ID {media_id}")
     logging.info(f"Action '{action}' requested for item '{item_title}'")
     
@@ -262,9 +274,11 @@ def handle_action(media_id):
 
         current_folder_path = os.path.dirname(item_to_action['filePath'])
 
-
-
-        move_success, move_result = file_service.move_sonarr_series(current_folder_path, selected_archive_folder, item_id)  #file_service.move_to_archive(current_folder_path, selected_archive_folder)
+        if item_type == 'tv':
+            move_success, move_result = file_service.move_sonarr_series(current_folder_path, selected_archive_folder, item_id)  #file_service.move_to_archive(current_folder_path, selected_archive_folder)
+        else: 
+            move_success, move_result = file_service.move_radarr_movie(current_folder_path, selected_archive_folder, item_id)
+        
         if not move_success:
             return jsonify({'status': 'error', 'message': f"File move failed: {move_result}"}), 500
         

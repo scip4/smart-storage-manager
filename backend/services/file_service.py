@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 def move_sonarr_series(current_path, archive_root_path, show_id):
     try:
         logger.info(f"Moving '{current_path}' to '{archive_root_path}'...")
-        #sonarr_service.move_sonarr_series(current_path,archive_root_path,show_id)              
+        sonarr_service.move_sonarr_series(current_path,archive_root_path,show_id)              
         #shutil.move(current_path, archive_root_path)
         logger.info(f"Move successful for '{show_id}'.")
         return True, archive_root_path
@@ -18,6 +18,20 @@ def move_sonarr_series(current_path, archive_root_path, show_id):
     except:
         logger.error(f"Error moving directory from '{current_path}' to '{archive_root_path}': {e}", exc_info=True)
         return False, str(e)  
+
+def move_radarr_movie(current_path, archive_root_path, movie_id):
+    try:
+        logger.info(f"Moving '{current_path}' to '{archive_root_path}'...")
+        radarr_service.move_radarr_movie(current_path,archive_root_path,movie_id)              
+        #shutil.move(current_path, archive_root_path)
+        logger.info(f"Move successful for '{movie_id}'.")
+        return True, archive_root_path
+
+    except:
+        logger.error(f"Error moving directory from '{current_path}' to '{archive_root_path}': {e}", exc_info=True)
+        return False, str(e)  
+
+
 
 def move_to_archive(current_path, archive_root_path):
     if not current_path or not os.path.exists(current_path):
