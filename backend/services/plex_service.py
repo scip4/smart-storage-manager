@@ -98,6 +98,30 @@ def get_plex_connection():
     except Exception as e:
        print(f"Error connecting to Plex server: {e}")
        return None
+def delete_media_from_plex(media_id: str) -> tuple[bool, str]:
+    """
+    Delete media from Plex by its media ID (ratingKey)
+    
+    Args:
+        media_id: The ratingKey of the media item to delete
+        
+    Returns:
+        Tuple (success: bool, message: str)
+    """
+    plex = get_plex_connection()
+    if not plex:
+        return False, "Failed to connect to Plex server"
+        
+    try:
+        key = f'/library/metadata/{media_id}'
+        media_item = plex.fetchItem(key)
+        media_item.delete()
+        return True, f"Successfully deleted media with ID {media_id}"
+    except Exception as e:
+        error_msg = f"Error deleting media with ID {media_id}: {str(e)}"
+        print(error_msg)
+        return False, error_msg
+
 
 def get_plex_library():
     plex = get_plex_connection()
@@ -107,6 +131,7 @@ def get_plex_library():
     # Get title-to-ID mappings for shows and movies
     sonarr_title_id_map = sonarr_service.get_series_title_id_map()
     radarr_title_id_map = radarr_service.get_movie_title_id_map()
+    
     
     for section in plex.library.sections():
         if section.type == 'movie':

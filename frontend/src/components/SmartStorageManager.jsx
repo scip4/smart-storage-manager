@@ -96,6 +96,7 @@ const MediaItemCard = ({ item, onRuleChange, onExecuteAction }) => {
                     <span><strong>Size:</strong> {item.size} GB</span>
                     <span><strong>Last Watched:</strong> {item.lastWatched || 'N/A'}</span>
                     <span><strong>Watch Count:</strong> {item.watchCount}</span>
+                    <span><strong>Storage Location:</strong> {item.rootFolderPath}</span>
                 </div>
                 <div className="text-sm text-gray-600">
                     <span><strong>Status:</strong> <span className={`font-medium ${isCandidate ? 'text-yellow-800' : 'text-green-800'}`}>{item.status}</span></span>
@@ -133,6 +134,7 @@ const SmartStorageManager = () => {
     const [candidates, setCandidates] = useState([]);
     const [endedShows, setEndedShows] = useState([]);
     const [streamingMovies, setStreamingMovies] = useState([]);
+    const [largeMovies, setLargeMovies] = useState([]);
     const [potentialSavings, setPotentialSavings] = useState(0);
     const [libraryStats, setLibraryStats] = useState({});
     const [upcomingReleases, setUpcomingReleases] = useState([]);
@@ -164,6 +166,7 @@ const SmartStorageManager = () => {
                     setCandidates(dashData.candidates);
                     setEndedShows(dashData.recommendedActions?.endedShows || []);
                     setStreamingMovies(dashData.recommendedActions?.streamingMovies || []);
+                    setLargeMovies(dashData.largeMovies || []);
                     setPotentialSavings(dashData.potentialSavings);
                     setUpcomingReleases(dashData.upcomingReleases);
                     setLibraryStats(dashData.libraryStats);
@@ -234,9 +237,10 @@ const SmartStorageManager = () => {
             if (!response.ok) { throw new Error(resData.message || `Failed to perform archive.`); }
             alert(resData.message);
             fetchDataForTab(activeTab);
-            setIsArchiveDialogOpen(false);
         } catch (err) {
             alert(`Error: ${err.message}`);
+        } finally {
+            setIsArchiveDialogOpen(false);
         }
     };
 
@@ -335,10 +339,10 @@ const SmartStorageManager = () => {
                     <div className="bg-white rounded-lg shadow-md p-6">
                         <h3 className="text-lg font-semibold mb-4 flex items-center">
                             <Film className="w-5 h-5 mr-2 text-purple-500" />
-                            Largest Movies on Streaming
+                            Largest Non-4k Movies on Streaming
                         </h3>
                         <div className="space-y-3 max-h-96 overflow-y-auto">
-                            {streamingMovies.length > 0 ? streamingMovies.map(item => (
+                            {largeMovies.length > 0 ? largeMovies.map(item => (
                                 <div key={`streaming-${item.id}`} className="flex justify-between items-center p-3 border rounded">
                                     <div className="flex-1">
                                         <div className="font-medium">{item.title}</div>
@@ -354,7 +358,7 @@ const SmartStorageManager = () => {
                 
                 <div className="bg-white rounded-lg shadow-md p-6">
                     <h3 className="text-lg font-semibold mb-4">Recommended Actions</h3>
-                    <div className="space-y-3 max-h-96 overflow-y-auto">{candidates.length > 0 ? candidates.map(item => (<div key={`${item.type}-${item.id}`} className="flex justify-between items-center p-3 border rounded"><div className="flex-1"><div className="font-medium">{item.title}</div><div className="text-sm text-gray-600">{item.size} GB • Last watched: {item.lastWatched || 'Never'}</div></div><div className="flex space-x-2 ml-4">{item.status === 'candidate-delete' && <button onClick={() => executeAction(item, 'delete')} className="px-3 py-1 bg-red-500 text-white rounded text-sm hover:bg-red-600 flex items-center"><Trash2 className="w-3 h-3 mr-1" />Delete</button>}{item.status === 'candidate-archive' && <button onClick={() => executeAction(item, 'archive')} className="px-3 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600 flex items-center"><Archive className="w-3 h-3 mr-1" />Archive</button>}</div></div>)) : <div className="text-center text-gray-500 py-4">No cleanup actions recommended.</div>}</div>
+                    <div className="space-y-3 max-h-96 overflow-y-auto">{candidates.length > 0 ? candidates.map(item => (<div key={`${item.type}-${item.id}`} className="flex justify-between items-center p-3 border rounded"><div className="flex-1"><div className="font-medium">{item.title}</div><div className="text-sm text-gray-600">{item.size} GB • Last watched: {item.lastWatched || 'Never'} <br></br> Location: {item.filePath}</div></div><div className="flex space-x-2 ml-4">{item.status === 'candidate-delete' && <button onClick={() => executeAction(item, 'delete')} className="px-3 py-1 bg-red-500 text-white rounded text-sm hover:bg-red-600 flex items-center"><Trash2 className="w-3 h-3 mr-1" />Delete</button>}{item.status === 'candidate-archive' && <button onClick={() => executeAction(item, 'archive')} className="px-3 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600 flex items-center"><Archive className="w-3 h-3 mr-1" />Archive</button>}</div></div>)) : <div className="text-center text-gray-500 py-4">No cleanup actions recommended.</div>}</div>
                 </div>
             </div>
         );

@@ -208,6 +208,46 @@ def get_series_root_folder(series_id: int) -> Optional[str]:
         logging.error(f"Error fetching series root folder: {e}")
         return None
 
+def unmonitor_series(series_id: int) -> tuple[bool, str]:
+    """
+    Unmonitor a series in Sonarr by its ID
+    
+    Args:
+        series_id: Sonarr series ID to unmonitor
+        
+    Returns:
+        Tuple (success: bool, message: str)
+    """
+    if not sonarr_api:
+        return False, "Sonarr not configured."
+        
+    try:
+        # Get the current series data
+        response = sonarr_api.session.get(f'{sonarr_api.base_url}/api/v3/series/{series_id}')
+        response.raise_for_status()
+        series_data = response.json()
+        
+        # Update monitored status
+        series_data['monitored'] = False
+        
+        # Send updated data to Sonarr
+        update_res = sonarr_api.session.put(
+            f'{sonarr_api.base_url}/api/v3/series/{series_id}',
+            json=series_data
+        )
+        update_res.raise_for_status()
+        
+        return True, f"Successfully unmonitored series ID {series_id}"
+    except requests.exceptions.RequestException as e:
+        error_msg = f"Failed to unmonitor series ID {series_id}: {str(e)}"
+        logger.error(error_msg)
+        return False, error_msg
+    except Exception as e:
+        error_msg = f"Unexpected error unmonitoring series ID {series_id}: {str(e)}"
+        logger.error(error_msg)
+        return False, error_msg
+
+
 def get_upcoming_shows():
     # Placeholder - this function can remain for future use
     return []

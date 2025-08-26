@@ -145,11 +145,17 @@ def get_dashboard_data():
                         if item.type == 'movie' and item.status =='delete-if-streaming']
     streaming_movies_sorted = sorted(streaming_movies, key=lambda x: x.size, reverse=True)[:5]
 
+
+
+    large_movies = [item for item in analyzed_media
+                        if item.type == 'movie' and item.status !='archive' and item.rootFolderPath.find('4K') == -1]
+    large_movies_sorted = sorted(large_movies, key=lambda x: x.size, reverse=True)[:10]
     return jsonify({
         'storageData': storage_data.__dict__,
         'archiveData': archive_data.__dict__,
         'potentialSavings': round(potential_savings, 2),
         'candidates': candidates,
+        'largeMovies': [item.__dict__ for item in large_movies_sorted],
         'upcomingReleases': upcoming,
         'libraryStats': {
             'tv': tv_shows,
@@ -226,6 +232,7 @@ def handle_action(media_id):
     item_to_action = data.get('item', {})
     item_title = item_to_action.get('title', f"ID {media_id}")
     item_type = item_to_action.get('type')
+    plex_id = item_to_action.get('ID', f"ID {media_id}")
     if item_type == 'tv':
         sonarr_title_id_map = sonarr_service.get_series_title_id_map()
         item_id = sonarr_title_id_map.get(item_title)
