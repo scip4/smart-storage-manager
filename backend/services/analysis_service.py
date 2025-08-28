@@ -1,7 +1,13 @@
 # backend/services/analysis_service.py
+import logging
 from datetime import datetime, timedelta
+# --- Caching Integration ---
+# Import the central cache instance and timeout setting for our application
+from .cache_service import cache, CACHE_TIMEOUT
 
-def apply_rules_to_media(media_list, settings):
+logger = logging.getLogger(__name__)
+
+def _cache_media_rules(media_list, settings):
     """
     Analyzes a list of media items and updates their status based on rules.
     This is the core logic engine.
@@ -44,3 +50,30 @@ def apply_rules_to_media(media_list, settings):
                 continue
 
     return media_list
+
+
+def apply_rules_to_media(media_list, settings):
+    """
+    Public function to get Sonarr stats. It uses a cache to avoid repeated slow API calls.
+    """
+    cache_key = "analyzed_media"
+    
+    # Try to get the data from the cache first
+    cached_data = cache.get(cache_key)
+    
+    if cached_data is not None:
+        logger.info("✅ Cache HIT! Returning analyzed media from cache.")
+        return cached_data
+    
+    # If not in cache, it's a "miss"
+    logger.warning("⚠️  Cache MISS for analyzed media. Fetching fresh data...")
+    
+    # Perform the slow calculation
+    fresh_data = _cache_media_rules(media_list, settings)
+    
+    # Store the fresh data in the cache for next time
+    if fresh_data and len(fresh_data) > 0:
+        logger.info(f"Storing Sonarr summary in cache for {CACHE_TIMEOUT} seconds.")
+        cache.set(cache_key, fresh_data, timeout=CACHE_TIMEOUT)
+        
+    return fresh_data

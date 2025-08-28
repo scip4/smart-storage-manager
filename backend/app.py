@@ -6,7 +6,32 @@ from logging.handlers import RotatingFileHandler
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from dotenv import load_dotenv
+from apscheduler.schedulers.background import BackgroundScheduler
+import threading
+# --- Add sync_service import ---
+from services.sync_service import perform_full_sync
 from services import plex_service, sonarr_service, radarr_service, analysis_service, file_service, storage_service
+from services.cache_service import cache, CACHE_TIMEOUT
+
+# --- NEW: SCHEDULER SETUP ---
+# This block initializes and starts the background task scheduler.
+scheduler = BackgroundScheduler(daemon=True)
+# This schedules the 'perform_full_sync' function to run at an interval of 30 minutes.
+# This is where the time is set.
+scheduler.add_job(
+    func=perform_full_sync,
+    trigger='interval',
+    minutes=30,
+    id='full_sync_job'
+)
+# We also run the job once immediately on startup so the app has data right away.
+scheduler.add_job(func=perform_full_sync, id='initial_sync_job')
+scheduler.start()
+logging.info("Background scheduler started. Sync task scheduled for every 30 minutes.")
+
+# Ensure the scheduler shuts down when the app exits
+import atexit
+atexit.register(lambda: scheduler.shutdown())
 
 
 load_dotenv()
@@ -22,12 +47,20 @@ def setup_logging():
     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     file_handler.setFormatter(formatter)
     console_handler.setFormatter(formatter)
+    
+    # Get the root logger and configure it
     logger = logging.getLogger()
     logger.setLevel(logging.DEBUG)
-    if not logger.handlers:
-        logger.addHandler(file_handler)
-        logger.addHandler(console_handler)
-    logging.info("Application starting up...")
+    
+    # Remove any existing handlers to avoid duplicates
+    for handler in logger.handlers[:]:
+        logger.removeHandler(handler)
+        
+    # Add our custom handlers
+    logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
+    
+    logger.info("Application starting up...")
 
 # Initialize Flask App
 app = Flask(__name__)
@@ -95,7 +128,41 @@ def get_logs():
 
 @app.route('/api/dashboard')
 def get_dashboard_data():
-    logging.info("Dashboard data requested.")
+    """
+    This endpoint is now extremely fast. It ONLY reads from the cache,
+    which is populated by the background sync task.
+    """
+    logging.info("Dashboard data requested by user.")
+    
+    # Try to get the pre-computed dashboard data from the cache.
+    dashboard_data = cache.get('dashboard_data')
+    
+    if dashboard_data:
+        logging.info("Returning pre-computed dashboard data from cache.")
+        return jsonify(dashboard_data)
+    else:
+        # This case happens if the app has just started and the initial sync hasn't finished.
+        # We can return a loading state or even trigger a sync manually here as a fallback.
+        logging.warning("Dashboard data not yet available in cache. The initial sync might be running.")
+        return jsonify({
+            "message": "Data is being gathered in the background. Please try again in a moment."
+        }), 202 # HTTP 202 Accepted status
+
+
+
+
+
+
+    """ logging.info("Dashboard data requested.")
+
+        # --- Caching Logic ---
+    # Try to get the fully computed dashboard data from the cache first
+    cached_data = cache.get('dashboard_data')
+    if cached_data:
+        logging.info("Returning dashboard data from cache.")
+        return jsonify(cached_data)
+
+    logging.info("Cache miss. Re-computing dashboard data.")
     settings = load_settings()
     all_media = plex_service.get_plex_library()
     analyzed_media = analysis_service.apply_rules_to_media(all_media, settings)
@@ -148,9 +215,10 @@ def get_dashboard_data():
 
 
     large_movies = [item for item in analyzed_media
-                        if item.type == 'movie' and item.status !='archive' and item.rootFolderPath.find('4K') == -1]
+                        if item.type == 'movie' and item.status !='archive'] # and item.rootFolderPath.find('4K') == -1]
     large_movies_sorted = sorted(large_movies, key=lambda x: x.size, reverse=True)[:10]
-    return jsonify({
+
+    dashboard_data = {
         'storageData': storage_data.__dict__,
         'archiveData': archive_data.__dict__,
         'potentialSavings': round(potential_savings, 2),
@@ -169,8 +237,59 @@ def get_dashboard_data():
             'endedShows': [item.__dict__ for item in ended_shows_sorted],
             'streamingMovies': [item.__dict__ for item in streaming_movies_sorted]
         }
-    })
+    } """
+        # --- Store the result in the cache for next time ---
+    cache.set('dashboard_data', dashboard_data, timeout=CACHE_TIMEOUT)
 
+
+    return jsonify(dashboard_data)
+
+
+
+@app.route('/api/sync/trigger', methods=['POST'])
+def trigger_manual_sync():
+    """
+    Manually triggers the background sync task.
+    It runs the sync in a separate thread so the user's request
+    doesn't have to wait for the entire sync to finish.
+    """
+    logging.info("Manual sync triggered by user from the settings page.")
+    
+    # Check if a sync is already running to prevent duplicates
+    # (APScheduler is smart about this, but this is an extra layer of safety)
+    if cache.get('is_syncing'):
+        logging.warning("Sync request denied: a sync is already in progress.")
+        # Return a 429 Too Many Requests status
+        return jsonify({"message": "A sync is already in progress. Please wait."}), 429
+
+    try:
+        # Set a flag in the cache to indicate a sync is running
+        cache.set('is_syncing', True, timeout=1800) # Timeout after 30 mins just in case
+
+        # Run the sync function in a non-blocking background thread
+        # This makes the API endpoint return immediately for the user
+        sync_thread = threading.Thread(target=perform_full_sync_and_clear_flag)
+        sync_thread.start()
+
+        # Immediately return a success response to the user
+        return jsonify({"message": "Sync started in the background. Dashboard will update shortly."}), 202
+    except Exception as e:
+        logging.error(f"Failed to start manual sync thread: {e}", exc_info=True)
+        # Clear the flag on error
+        cache.delete('is_syncing')
+        return jsonify({"message": "An error occurred while trying to start the sync."}), 500
+
+def perform_full_sync_and_clear_flag():
+    """
+    A helper function to run the sync and ensure the 'is_syncing'
+    flag in the cache is cleared, even if the sync fails.
+    """
+    try:
+        perform_full_sync()
+    finally:
+        # This `finally` block ensures the flag is always removed
+        cache.delete('is_syncing')
+        logging.info("Sync finished, 'is_syncing' flag cleared.")
 
 # Removed duplicate route definition
 
@@ -188,15 +307,54 @@ def handle_settings():
         new_settings = request.json
         logging.info("Saving settings.")
         save_settings(new_settings)
+        
+        # Also save environment variables to .env file
+        env_vars = [
+            'PLEX_URL', 'PLEX_TOKEN',
+            'SONARR_URL', 'SONARR_API_KEY',
+            'RADARR_URL', 'RADARR_API_KEY',
+            'TMDB_API_KEY', 'MOUNT_POINTS',
+            'ARCHIVE_DRIVE', 'STREAMING_PROVIDERS',
+            'TV_ARCHIVE_FOLDERS', 'MOVIE_ARCHIVE_FOLDERS',
+            'DATA_UPDATE_INTERVAL'
+        ]
+        
+        env_lines = []
+        for var in env_vars:
+            value = new_settings.get(var, '')
+            # For array values, join with commas
+            if isinstance(value, list):
+                value = ','.join(value)
+            env_lines.append(f"{var}={value}")
+        
+        # Write to .env file
+        with open('.env', 'w') as f:
+            f.write('\n'.join(env_lines))
+        
         return jsonify(new_settings)
     
     logging.debug("Settings data requested.")
     settings = load_settings()
     
     # Get TV and movie archive folders from environment variables
-    settings['tvArchiveFolders'] = [f for f in os.getenv('TV_ARCHIVE_FOLDERS', '').split(',') if f]
-    settings['movieArchiveFolders'] = [f for f in os.getenv('MOVIE_ARCHIVE_FOLDERS', '').split(',') if f]
+    # Add all relevant environment variables to the settings response
+    env_vars = ['Streaming Preferences',
+        'PLEX_URL', 'PLEX_TOKEN',
+        'SONARR_URL', 'SONARR_API_KEY',
+        'RADARR_URL', 'RADARR_API_KEY',
+        'TMDB_API_KEY', 'MOUNT_POINTS',
+        'ARCHIVE_DRIVE', 'STREAMING_PROVIDERS',
+        'TV_ARCHIVE_FOLDERS', 'MOVIE_ARCHIVE_FOLDERS','DATA_UPDATE_INTERVAL'
+    ]
     
+    for var in env_vars:
+        value = os.getenv(var, '')
+        # For comma-separated values, split into arrays
+        if var in ['MOUNT_POINTS', 'STREAMING_PROVIDERS', 'TV_ARCHIVE_FOLDERS', 'MOVIE_ARCHIVE_FOLDERS']:
+            settings[var] = [v.strip() for v in value.split(',') if v.strip()]
+        else:
+            settings[var] = value
+            
     return jsonify(settings)
 
 @app.route('/api/root-folders', methods=['GET'])

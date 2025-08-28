@@ -1,9 +1,13 @@
 # backend/services/plex_service.py
 import os
+import logging
 import requests
 from plexapi.server import PlexServer
 from models import Show, Movie
 from services import sonarr_service, radarr_service
+from .cache_service import cache, CACHE_TIMEOUT
+
+logger = logging.getLogger(__name__)
 
 def is_tv_archive_folder(path: str) -> bool:
     """Check if a path is listed in TV_ARCHIVE_FOLDERS environment variable"""
@@ -122,8 +126,33 @@ def delete_media_from_plex(media_id: str) -> tuple[bool, str]:
         print(error_msg)
         return False, error_msg
 
-
 def get_plex_library():
+    """
+    Public function to get Sonarr stats. It uses a cache to avoid repeated slow API calls.
+    """
+    cache_key = "plex_media"
+    
+    # Try to get the data from the cache first
+    cached_data = cache.get(cache_key)
+    
+    if cached_data is not None:
+        logger.info("✅ Cache HIT! Returning Plex media from cache.")
+        return cached_data
+    
+    # If not in cache, it's a "miss"
+    logger.warning("⚠️  Cache MISS for Plex media. Fetching fresh data...")
+    
+    # Perform the slow calculation
+    fresh_data = _get_plex_library()
+    
+    # Store the fresh data in the cache for next time
+    if fresh_data and len(fresh_data) > 0:
+        logger.info(f"Storing Plex Mediain cache for {CACHE_TIMEOUT} seconds.")
+        cache.set(cache_key, fresh_data, timeout=CACHE_TIMEOUT)
+        
+    return fresh_data
+
+def _get_plex_library():
     plex = get_plex_connection()
     if not plex: return []
 
@@ -140,8 +169,9 @@ def get_plex_library():
                 movie_id = radarr_title_id_map.get(movie.title)
                 spath = radarr_service.get_movie_root_folder(movie_id)
                 # Check streaming availability
-                streaming_services = check_streaming_availability(movie.title, 'movie')
-                
+                streaming_services = ''
+                if size_gb > 15:
+                      streaming_services = check_streaming_availability(movie.title, 'movie')
                 all_media.append(Movie(
                     id=movie.ratingKey,
                     title=movie.title, year=movie.year, size=round(size_gb, 2),
@@ -164,6 +194,7 @@ def get_plex_library():
                 if sonarr_id:
                     try:
                         # Get size and status in one call
+                        #Cace series Data Test
                         show_size = sonarr_service.get_series_size(sonarr_id)
                         size_gb = show_size / (1024**3) if show_size else 0
                         sonarr_show = sonarr_service.sonarr_api.get_series_by_id(sonarr_id)
@@ -177,7 +208,7 @@ def get_plex_library():
                     size_gb = sonarr_service.get_series_size(sonarr_id) / (1024**3) if sonarr_id else 0
                 
                 # Check streaming availability
-                streaming_services = check_streaming_availability(show.title, 'tv')
+                streaming_services = ''#check_streaming_availability(show.title, 'tv')
                 
                 all_media.append(Show(
                     id=show.ratingKey,

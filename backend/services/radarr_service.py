@@ -3,6 +3,10 @@ import logging
 import os
 import requests
 from typing import Dict, List, Optional
+# --- Caching Integration ---
+# Import the central cache instance and timeout setting for our application
+from .cache_service import cache, CACHE_TIMEOUT
+
 
 logger = logging.getLogger(__name__)
 
@@ -97,8 +101,32 @@ def get_movie_title_id_map() -> Dict[str, int]:
     """
     movies = radarr_api.get_all_movies()
     return {movie['title']: movie['id'] for movie in movies}
-
 def get_library_summary() -> Dict:
+    """
+    Public function to get Sonarr stats. It uses a cache to avoid repeated slow API calls.
+    """
+    cache_key = "radarr_library_summary"
+    
+    # Try to get the data from the cache first
+    cached_data = cache.get(cache_key)
+    
+    if cached_data is not None:
+        logger.info("✅ Cache HIT! Returning Radarr summary from cache.")
+        return cached_data
+    
+    # If not in cache, it's a "miss"
+    logger.warning("⚠️  Cache MISS for Radarr summary. Fetching fresh data...")
+    
+    # Perform the slow calculation
+    fresh_data = _get_library_summary()
+    
+    # Store the fresh data in the cache for next time
+    if fresh_data and fresh_data['total_movies'] > 0:
+        logger.info(f"Storing Radadd summary in cache for {CACHE_TIMEOUT} seconds.")
+        cache.set(cache_key, fresh_data, timeout=CACHE_TIMEOUT)
+        
+    return fresh_data
+def _get_library_summary() -> Dict:
     """
     Calculates total size and movie count for the Radarr movie library.
     This uses the optimized method for accuracy by summing movie files.

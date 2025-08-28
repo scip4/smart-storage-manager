@@ -145,7 +145,11 @@ env.bak/
 venv.bak/
 backend/.env
 .oldenv
+frontend/src/components/.old
 backend/.oldenv
+settings.json
+*.log
+*.old
 # Spyder project settings
 .spyderproject
 .spyproject
