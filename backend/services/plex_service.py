@@ -158,16 +158,26 @@ def _get_plex_library():
 
     all_media = []
     # Get title-to-ID mappings for shows and movies
+
+
+
     sonarr_title_id_map = sonarr_service.get_series_title_id_map()
     radarr_title_id_map = radarr_service.get_movie_title_id_map()
-    
-    
+    cached_sonarr_data = cache.get("sonarr_summary_raw")
+    cached_radarr_data = cache.get("radarr_summary_raw")
+
     for section in plex.library.sections():
         if section.type == 'movie':
             for movie in section.all():
                 size_gb = movie.media[0].parts[0].size / (1024**3) if movie.media else 0
                 movie_id = radarr_title_id_map.get(movie.title)
-                spath = radarr_service.get_movie_root_folder(movie_id)
+                spath = '/'   # default root path
+                if movie_id is not None:
+                    # Safely get the moviePath dictionary from cached_radarr_data
+                    movie_paths = cached_radarr_data.get('moviePath', {})
+                    # If we have a non-None value for this movie_id, use it
+                    if movie_id in movie_paths and movie_paths[movie_id] is not None:
+                        spath = movie_paths[movie_id]
                 # Check streaming availability
                 streaming_services = ''
                 if size_gb > 15:
@@ -195,11 +205,25 @@ def _get_plex_library():
                     try:
                         # Get size and status in one call
                         #Cace series Data Test
-                        show_size = sonarr_service.get_series_size(sonarr_id)
+                        #show_size = 
+                        show_size = 0
+                        if cached_sonarr_data is not None:
+                            # Safely get the seriesSize dictionary from cached_sonarr_data
+                            series_size_dict = cached_sonarr_data.get('seriesSize', {})
+                            # If we have a value for this sonarr_id, use it
+                            if sonarr_id in series_size_dict and series_size_dict[sonarr_id] is not None:
+                                show_size = series_size_dict[sonarr_id]
+                        if show_size == 0:
+                            # Only fetch from Sonarr if we don't have a cached value
+                            show_size = sonarr_service.get_series_size(sonarr_id) or 0
                         size_gb = show_size / (1024**3) if show_size else 0
-                        sonarr_show = sonarr_service.sonarr_api.get_series_by_id(sonarr_id)
-                        if sonarr_show:
-                            show_status = sonarr_show.get('status')
+                        try:
+                            sonarr_show = sonarr_service.sonarr_api.get_series_by_id(sonarr_id)
+                            if sonarr_show:
+                                show_status = sonarr_show.get('status')
+                        except Exception as e:
+                            print(f"Error getting Sonarr show data: {e}")
+                            show_status = None
                     except Exception as e:
                         print(f"Error getting Sonarr data for show {show.title}: {e}")
                 
@@ -208,7 +232,10 @@ def _get_plex_library():
                     size_gb = sonarr_service.get_series_size(sonarr_id) / (1024**3) if sonarr_id else 0
                 
                 # Check streaming availability
-                streaming_services = ''#check_streaming_availability(show.title, 'tv')
+                if size_gb >=10: 
+                    streaming_services = check_streaming_availability(show.title, 'tv')
+                else:
+                    streaming_services = 'TV Show under 10GB'    
                 
                 all_media.append(Show(
                     id=show.ratingKey,

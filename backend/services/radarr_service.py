@@ -99,7 +99,18 @@ def get_movie_title_id_map() -> Dict[str, int]:
     Returns:
         Dictionary of {title: id}
     """
-    movies = radarr_api.get_all_movies()
+    cached_movie_data = cache.get("Radarr_all_movies")
+    #cache.set(cache_test, all_series, timeout=CACHE_TIMEOUT)
+
+
+
+    if cached_movie_data is not None:
+        logger.info("✅ Cache HIT! Returning Sonarr series from cache.")
+        movies = cached_movie_data
+        #return cached_data
+    else:
+        movies = radarr_api.get_all_movies()
+    
     return {movie['title']: movie['id'] for movie in movies}
 def get_library_summary() -> Dict:
     """
@@ -135,17 +146,27 @@ def _get_library_summary() -> Dict:
         return {'total_gb': 0.0, 'total_movies': 0}
 
     logger.info("Calculating Radarr movie library size using accurate movie file summation.")
+
+
     all_movies = radarr_api.get_all_movies()
+    cache_test = "Radarr_all_movies"
+
+    cache_root_path = "Movie_root_path"
+    # Try to get the data from the cache first
+    #cached_data = cache.get(cache_key)
+    cache.set(cache_test, all_movies, timeout=CACHE_TIMEOUT)
     if not all_movies:
         return {'total_gb': 0.0, 'total_movies': 0}
 
     total_size_bytes = 0
     movies_with_files = 0
-
+    movie_data = {}
+    movie_path = {}
     for i, movie in enumerate(all_movies):
         movie_id = movie['id']
         movie_files = radarr_api.get_movie_files_for_movie(movie_id)
-        
+        movie_data[movie_id] = movie_files
+        movie_path[movie_id] = get_movie_root_folder(movie_id)
         if movie_files:  # Only count movies that have files
             movie_size = sum(f.get('size', 0) for f in movie_files)
             total_size_bytes += movie_size
@@ -159,7 +180,8 @@ def _get_library_summary() -> Dict:
 
     return {
         'total_gb': round(total_gb, 2),
-        'total_movies': movies_with_files
+        'total_movies': movies_with_files,
+        'movieData': movie_data, 'moviePath': movie_path
     }
 
 def update_movie_root_folder(movie_id: int, new_root_folder_path: str):

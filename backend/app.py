@@ -77,7 +77,7 @@ def get_default_settings():
     return {
         "autoDeleteAfterDays": 30, "archiveAfterMonths": 6, "keepFreeSpace": 500,
         "enableAutoActions": False, "checkStreamingAvailability": True,
-        "preferredStreamingServices": [], "archiveFolderPath": "",
+        "preferredStreamingServices": [], "archiveFolderPath": "","availableStreamingProviders": [],
         "tvArchiveFolders": [],
         "movieArchiveFolders": []
     }
@@ -316,7 +316,7 @@ def handle_settings():
             'TMDB_API_KEY', 'MOUNT_POINTS',
             'ARCHIVE_DRIVE', 'STREAMING_PROVIDERS',
             'TV_ARCHIVE_FOLDERS', 'MOVIE_ARCHIVE_FOLDERS',
-            'DATA_UPDATE_INTERVAL'
+            'DATA_UPDATE_INTERVAL','AVAILABLE_STREAMING_PROVIDERS'
         ]
         
         env_lines = []
@@ -343,7 +343,7 @@ def handle_settings():
         'SONARR_URL', 'SONARR_API_KEY',
         'RADARR_URL', 'RADARR_API_KEY',
         'TMDB_API_KEY', 'MOUNT_POINTS',
-        'ARCHIVE_DRIVE', 'STREAMING_PROVIDERS',
+        'ARCHIVE_DRIVE', 'STREAMING_PROVIDERS','AVAILABLE_STREAMING_PROVIDERS',
         'TV_ARCHIVE_FOLDERS', 'MOVIE_ARCHIVE_FOLDERS','DATA_UPDATE_INTERVAL'
     ]
     
@@ -354,7 +354,11 @@ def handle_settings():
             settings[var] = [v.strip() for v in value.split(',') if v.strip()]
         else:
             settings[var] = value
-            
+         # --- NEW: Add the available providers list to the settings response ---
+    providers_str = os.getenv('AVAILABLE_STREAMING_PROVIDERS', '')
+    available_providers = [p.strip() for p in providers_str.split(',') if p.strip()]
+
+    settings['availableStreamingProviders'] = available_providers       
     return jsonify(settings)
 
 @app.route('/api/root-folders', methods=['GET'])

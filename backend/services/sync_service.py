@@ -37,14 +37,16 @@ def perform_full_sync():
     try:
         # Step 1: Fetch raw data from all sources
         # We can give these longer cache timeouts since they are only used here
+        
+        sonarr_summary = sonarr_service.get_library_summary()
+        cache.set('sonarr_summary_raw', sonarr_summary, timeout=CACHE_TIMEOUT * 2)
+        radarr_summary = radarr_service.get_library_summary()
+        cache.set('radarr_summary_raw', radarr_summary, timeout=CACHE_TIMEOUT * 2)
         plex_data = plex_service.get_plex_library()
         cache.set('plex_library_raw', plex_data, timeout=CACHE_TIMEOUT * 2)
         analyzed_media = analysis_service.apply_rules_to_media(plex_data, load_settings())
         cache.set('analyzed_media_raw', analyzed_media, timeout=CACHE_TIMEOUT * 2)
-        sonarr_summary = sonarr_service.get_library_summary()
-        cache.set('sonarr_summary_raw', sonarr_summary, timeout=CACHE_TIMEOUT * 2)
-        radarr_summary = radarr_service.get_library_summary()
-        cache.set('sonarr_summary_raw', radarr_summary, timeout=CACHE_TIMEOUT * 2)
+        
         disk_stats_bytes = storage_service.get_combined_disk_usage()
         cache.set('storage_info_raw', disk_stats_bytes, timeout=CACHE_TIMEOUT * 2)
         candidates = [item.__dict__ for item in analyzed_media if item.status and 'candidate' in item.status]
@@ -52,9 +54,11 @@ def perform_full_sync():
         potential_savings = sum(c['size'] for c in candidates)
         cache.set('potential_info_raw', potential_savings, timeout=CACHE_TIMEOUT * 2)
         logger.info("Raw data sources have been fetched and cached.")
+        archive_drive_stats = storage_service.get_archive_stats()
+        cache.set('archive_info_raw', archive_drive_stats, timeout=CACHE_TIMEOUT * 2)
         # --- REAL STORAGE DATA ---
         # Call our new service to get actual disk usage in bytes
-        disk_stats_bytes = storage_service.get_combined_disk_usage()
+        #disk_stats_bytes = storage_service.get_combined_disk_usage()
         # Convert bytes to Gigabytes for the API response
         storage_data = StorageInfo(
             total=disk_stats_bytes['total'] / (1024**3),
@@ -63,7 +67,7 @@ def perform_full_sync():
         )
     
         # Get archive drive stats with error handling
-        archive_drive_stats = storage_service.get_archive_stats()
+        
         if archive_drive_stats:
             archive_data = StorageInfo(
                 total=archive_drive_stats['total'] / (1024**3),
@@ -85,11 +89,7 @@ def perform_full_sync():
     
         upcoming = sonarr_service.get_upcoming_shows()
         # Calculate total size for series data
-        sz = 0
-        series_id = 6
-        dates = sonarr_summary['seriesData'][6]
-        for item in dates:
-            sz +=item['size']
+  
 
         #for size in sonarr_summary['seriesData'][6]
         """  for series_id, series_data in sonarr_summary['seriesData'].items():

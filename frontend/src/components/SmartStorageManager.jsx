@@ -106,6 +106,8 @@ const MediaItemCard = ({ item, onRuleChange, onExecuteAction }) => {
                     <span><strong>Last Watched:</strong> {item.lastWatched || 'N/A'}</span>
                     <span><strong>Watch Count:</strong> {item.watchCount}</span>
                     <span><strong>Storage Location:</strong> {item.rootFolderPath}</span>
+                    <span><strong>Streaming:</strong> {item.streamingServices}</span>
+                    
                 </div>
                 <div className="text-sm text-gray-600">
                     <span><strong>Status:</strong> <span className={`font-medium ${isCandidate ? 'text-yellow-800' : 'text-green-800'}`}>{item.status}</span></span>
@@ -140,10 +142,98 @@ const Dashboard = React.memo(({ loading, error, storageData, archiveData, potent
     if (error) return <ErrorDisplay error={error} onRetry={onRetry} />;
     return (
         <div className="space-y-6">
-            <div className="bg-white rounded-lg shadow-md p-6"><h2 className="text-xl font-semibold flex items-center mb-4"><HardDrive className="w-5 h-5 mr-2" />Storage Overview</h2><div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6"><div className="text-center"><div className="text-2xl font-bold text-blue-600">{formatStorage(storageData.used)}</div><div className="text-gray-600">Main Used</div></div><div className="text-center"><div className="text-2xl font-bold text-green-600">{formatStorage(storageData.available)}</div><div className="text-gray-600">Main Available</div></div><div className="text-center"><div className="text-2xl font-bold text-purple-600">{formatStorage(archiveData.used)}</div><div className="text-gray-600">Archive Used</div></div><div className="text-center"><div className="text-2xl font-bold text-orange-600">{formatStorage(potentialSavings)}</div><div className="text-gray-600">Potential Savings</div></div></div></div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6"><div className="bg-white rounded-lg shadow-md p-6"><div className="flex items-center justify-between"><div><h3 className="text-lg font-semibold">TV Shows</h3><p className="text-2xl font-bold text-blue-600">{libraryStats.tv || 0} Series / {libraryStats.tv_episodes || 0} Episodes</p><p className="text-sm text-gray-600">{formatStorage(libraryStats.tv_size)}</p></div><Tv className="w-8 h-8 text-blue-500" /></div></div><div className="bg-white rounded-lg shadow-md p-6"><div className="flex items-center justify-between"><div><h3 className="text-lg font-semibold">Movies</h3><p className="text-2xl font-bold text-purple-600">{libraryStats.movies || 0}</p><p className="text-sm text-gray-600">{formatStorage(libraryStats.movies_size)}</p></div><Film className="w-8 h-8 text-purple-500" /></div></div><div className="bg-white rounded-lg shadow-md p-6"><div className="flex items-center justify-between"><div><h3 className="text-lg font-semibold">On Streaming</h3><p className="text-2xl font-bold text-green-600">{libraryStats.onStreaming || 0}</p></div><ExternalLink className="w-8 h-8 text-green-500" /></div></div></div>
-            <div className="bg-white rounded-lg shadow-md p-6"><h3 className="text-lg font-semibold mb-4">Recommended Actions</h3><div className="space-y-3 max-h-96 overflow-y-auto">{candidates.length > 0 ? candidates.map(item => (<div key={`${item.type}-${item.id}`} className="flex justify-between items-center p-3 border rounded"><div className="flex-1"><div className="font-medium">{item.title}</div><div className="text-sm text-gray-600">{item.size} GB &bull; {item.reason}</div></div><div className="flex space-x-2 ml-4">{item.status.includes('delete') && <button onClick={() => executeAction(item, 'delete')} className="px-3 py-1 bg-red-500 text-white rounded text-sm hover:bg-red-600 flex items-center"><Trash2 className="w-3 h-3 mr-1" />Delete</button>}{item.status.includes('archive') && <button onClick={() => executeAction(item, 'archive')} className="px-3 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600 flex items-center"><Archive className="w-3 h-3 mr-1" />Archive</button>}</div></div>)) : <div className="text-center text-gray-500 py-4">No cleanup actions recommended.</div>}</div></div>
-        </div>
+   <div className="bg-white rounded-lg shadow-md p-6">
+      <h2 className="text-xl font-semibold flex items-center mb-4">
+         <HardDrive className="w-5 h-5 mr-2" />
+         Storage Overview
+      </h2>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+         <div className="text-center">
+            <div className="text-2xl font-bold text-blue-600">{formatStorage(storageData.used)}</div>
+            <div className="text-gray-600">Main Used</div>
+         </div>
+         <div className="text-center">
+            <div className="text-2xl font-bold text-green-600">{formatStorage(storageData.available)}</div>
+            <div className="text-gray-600">Main Available</div>
+         </div>
+
+         <div className="text-center">
+            <div className="text-2xl font-bold text-orange-600">{formatStorage(potentialSavings)}</div>
+            <div className="text-gray-600">Potential Savings</div>
+         </div>
+
+
+                        <div className="text-center"><div className="text-2xl font-bold text-gray-800">{formatStorage(archiveData.total)}</div><div className="text-gray-600">Archive Total</div></div>
+                        <div className="text-center"><div className="text-2xl font-bold text-purple-600">{formatStorage(archiveData.used)}</div><div className="text-gray-600">Archive Used</div></div>
+                        <div className="text-center"><div className="text-2xl font-bold text-black-600">{formatStorage(archiveData.available)}</div><div className="text-gray-600">Archive Available</div></div>   
+
+
+      </div>
+   </div>
+   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="bg-white rounded-lg shadow-md p-6">
+         <div className="flex items-center justify-between">
+            <div>
+               <h3 className="text-lg font-semibold">TV Shows</h3>
+               <p className="text-2xl font-bold text-blue-600">{libraryStats.tv || 0} Series / {libraryStats.tv_episodes || 0} Episodes</p>
+               <p className="text-sm text-gray-600">{formatStorage(libraryStats.tv_size)}</p>
+            </div>
+            <Tv className="w-8 h-8 text-blue-500" />
+         </div>
+      </div>
+      <div className="bg-white rounded-lg shadow-md p-6">
+         <div className="flex items-center justify-between">
+            <div>
+               <h3 className="text-lg font-semibold">Movies</h3>
+               <p className="text-2xl font-bold text-purple-600">{libraryStats.movies || 0}</p>
+               <p className="text-sm text-gray-600">{formatStorage(libraryStats.movies_size)}</p>
+            </div>
+            <Film className="w-8 h-8 text-purple-500" />
+         </div>
+      </div>
+      <div className="bg-white rounded-lg shadow-md p-6">
+         <div className="flex items-center justify-between">
+            <div>
+               <h3 className="text-lg font-semibold">On Streaming</h3>
+               <p className="text-2xl font-bold text-green-600">{libraryStats.onStreaming || 0}</p>
+            </div>
+            <ExternalLink className="w-8 h-8 text-green-500" />
+         </div>
+      </div>
+   </div>
+   <div className="bg-white rounded-lg shadow-md p-6">
+      <h3 className="text-lg font-semibold mb-4">Recommended Actions</h3>
+      <div className="space-y-3 max-h-96 overflow-y-auto">
+         {candidates.length > 0 ? candidates.map(item => (
+         <div key={`${item.type}-${item.id}`} className="flex justify-between items-center p-3 border rounded">
+            <div className="flex-1">
+<               div className="font-medium">{item.title}</div>
+               <div className="text-sm text-gray-600">{item.size} GB &bull; {item.reason}</div>
+               <div className="text-sm text-gray-600">{item.filePath}</div>
+               <div className="text-sm text-gray-600">{item.streamingServices}</div>
+            </div>
+            <div className="flex space-x-2 ml-4">
+               {item.status.includes('delete') && 
+               <button onClick={() =>
+                  executeAction(item, 'delete')} className="px-3 py-1 bg-red-500 text-white rounded text-sm hover:bg-red-600 flex items-center">
+                  <Trash2 className="w-3 h-3 mr-1" />
+                  Delete
+               </button>
+               }{item.status.includes('archive') && 
+               <button onClick={() =>
+                  executeAction(item, 'archive')} className="px-3 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600 flex items-center">
+                  <Archive className="w-3 h-3 mr-1" />
+                  Archive
+               </button>
+               }
+            </div>
+         </div>
+         )) : 
+         <div className="text-center text-gray-500 py-4">No cleanup actions recommended.</div>
+         }
+      </div>
+   </div>
+</div>
     );
 });
 
@@ -179,7 +269,7 @@ const ContentManagement = React.memo(({ loading, error, allContent, executeActio
     );
 });
 
-const SettingsPanel = React.memo(({ loading, error, connectionStatus, formSettings, onFieldChange, onAddFolder, onUpdateFolder, onDeleteFolder, onSave, onRetry }) => {
+const SettingsPanel = React.memo(({ loading, error, connectionStatus, formSettings, onFieldChange, onAddFolder, onUpdateFolder, onDeleteFolder, onSave, onRetry, onStreamingProviderChange }) => {
     // Add a new state to manage the sync button's status
     const [isSyncing, setIsSyncing] = useState(false);
     const [syncMessage, setSyncMessage] = useState('');
@@ -256,7 +346,60 @@ const SettingsPanel = React.memo(({ loading, error, connectionStatus, formSettin
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6"><div className="space-y-4"><h3 className="text-lg font-semibold">Plex</h3>
             <InputField label="Plex URL" value={formSettings.PLEX_URL} onChange={onFieldChange('PLEX_URL')} />
             <InputField label="Plex Token" type="password" value={formSettings.PLEX_TOKEN} onChange={onFieldChange('PLEX_TOKEN')} /></div>
-            <div className="space-y-4"><h3 className="text-lg font-semibold">Sonarr</h3><InputField label="Sonarr URL" value={formSettings.SONARR_URL} onChange={onFieldChange('SONARR_URL')} /><InputField label="Sonarr API Key" type="password" value={formSettings.SONARR_API_KEY} onChange={onFieldChange('SONARR_API_KEY')} /></div><div className="space-y-4"><h3 className="text-lg font-semibold">Radarr</h3><InputField label="Radarr URL" value={formSettings.RADARR_URL} onChange={onFieldChange('RADARR_URL')} /><InputField label="Radarr API Key" type="password" value={formSettings.RADARR_API_KEY} onChange={onFieldChange('RADARR_API_KEY')} /></div><div className="space-y-4"><h3 className="text-lg font-semibold">Other</h3><InputField label="Mount Points" placeholder="/data/media, /data/downloads" value={formSettings.MOUNT_POINTS?.join(', ') || ''} onChange={onFieldChange('MOUNT_POINTS', true)} /></div></div><div className="mt-8"><h3 className="text-lg font-semibold mb-4">Archive Folders</h3><div className="mb-6"><h3 className="text-lg font-semibold mb-2">TV Shows</h3><div className="space-y-2">{formSettings.TV_ARCHIVE_FOLDERS?.map((folder, index) => (<ArchiveFolderInput key={`tv-${index}`} folder={folder} index={index} onUpdate={(idx, val) => onUpdateFolder('TV_ARCHIVE_FOLDERS', idx, val)} onDelete={(idx) => onDeleteFolder('TV_ARCHIVE_FOLDERS', idx)} />))}{(!formSettings.TV_ARCHIVE_FOLDERS || formSettings.TV_ARCHIVE_FOLDERS.length === 0) && (<p className="text-gray-500">No TV archive folders</p>)}<button onClick={() => onAddFolder('TV_ARCHIVE_FOLDERS')} className="mt-2 px-3 py-1 bg-gray-100 text-gray-800 rounded text-sm hover:bg-gray-200">+ Add</button></div></div><div className="mb-6"><h3 className="text-lg font-semibold mb-2">Movies</h3><div className="space-y-2">{formSettings.MOVIE_ARCHIVE_FOLDERS?.map((folder, index) => (<ArchiveFolderInput key={`mv-${index}`} folder={folder} index={index} onUpdate={(idx, val) => onUpdateFolder('MOVIE_ARCHIVE_FOLDERS', idx, val)} onDelete={(idx) => onDeleteFolder('MOVIE_ARCHIVE_FOLDERS', idx)} />))}{(!formSettings.MOVIE_ARCHIVE_FOLDERS || formSettings.MOVIE_ARCHIVE_FOLDERS.length === 0) && (<p className="text-gray-500">No movie archive folders</p>)}<button onClick={() => onAddFolder('MOVIE_ARCHIVE_FOLDERS')} className="mt-2 px-3 py-1 bg-gray-100 text-gray-800 rounded text-sm hover:bg-gray-200">+ Add</button></div></div></div><button onClick={onSave} className="w-full bg-blue-500 text-white rounded py-3 hover:bg-blue-600 font-medium">Save All Settings</button></div>
+            <div className="space-y-4"><h3 className="text-lg font-semibold">Sonarr</h3><InputField label="Sonarr URL" value={formSettings.SONARR_URL} onChange={onFieldChange('SONARR_URL')} /><InputField label="Sonarr API Key" type="password" value={formSettings.SONARR_API_KEY} onChange={onFieldChange('SONARR_API_KEY')} /></div><div className="space-y-4"><h3 className="text-lg font-semibold">Radarr</h3><InputField label="Radarr URL" value={formSettings.RADARR_URL} onChange={onFieldChange('RADARR_URL')} /><InputField label="Radarr API Key" type="password" value={formSettings.RADARR_API_KEY} onChange={onFieldChange('RADARR_API_KEY')} /></div><div className="space-y-4"><h3 className="text-lg font-semibold">Other</h3><InputField label="Mount Points" placeholder="/data/media, /data/downloads" value={formSettings.MOUNT_POINTS?.join(', ') || ''} onChange={onFieldChange('MOUNT_POINTS', true)} /></div></div><div className="mt-8"><h3 className="text-lg font-semibold mb-4">Archive Folders</h3><div className="mb-6"><h3 className="text-lg font-semibold mb-2">TV Shows</h3><div className="space-y-2">{formSettings.TV_ARCHIVE_FOLDERS?.map((folder, index) => (<ArchiveFolderInput key={`tv-${index}`} folder={folder} index={index} onUpdate={(idx, val) => onUpdateFolder('TV_ARCHIVE_FOLDERS', idx, val)} onDelete={(idx) => onDeleteFolder('TV_ARCHIVE_FOLDERS', idx)} />))}{(!formSettings.TV_ARCHIVE_FOLDERS || formSettings.TV_ARCHIVE_FOLDERS.length === 0) && (<p className="text-gray-500">No TV archive folders</p>)}<button onClick={() => onAddFolder('TV_ARCHIVE_FOLDERS')} className="mt-2 px-3 py-1 bg-gray-100 text-gray-800 rounded text-sm hover:bg-gray-200">+ Add</button></div></div><div className="mb-6"><h3 className="text-lg font-semibold mb-2">Movies</h3><div className="space-y-2">{formSettings.MOVIE_ARCHIVE_FOLDERS?.map((folder, index) => (<ArchiveFolderInput key={`mv-${index}`} folder={folder} index={index} onUpdate={(idx, val) => onUpdateFolder('MOVIE_ARCHIVE_FOLDERS', idx, val)} onDelete={(idx) => onDeleteFolder('MOVIE_ARCHIVE_FOLDERS', idx)} />))}{(!formSettings.MOVIE_ARCHIVE_FOLDERS || formSettings.MOVIE_ARCHIVE_FOLDERS.length === 0) && (<p className="text-gray-500">No movie archive folders</p>)}<button onClick={() => onAddFolder('MOVIE_ARCHIVE_FOLDERS')} className="mt-2 px-3 py-1 bg-gray-100 text-gray-800 rounded text-sm hover:bg-gray-200">+ Add</button></div></div></div>
+            
+            
+            
+                        {/* --- NEW STREAMING PREFERENCES SECTION --- */}
+            <div className="bg-white rounded-lg shadow-md p-6">
+                <h3 className="text-lg font-semibold mb-4 flex items-center">
+                    <ExternalLink className="w-5 h-5 mr-2" />
+                    Streaming Preferences
+                </h3>
+                <div className="space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium mb-2">
+                            Monitor these streaming services:
+                        </label>
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                            {(formSettings.availableStreamingProviders || []).map(provider => (
+                                <label key={provider} className="flex items-center space-x-2 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                        checked={(formSettings.STREAMING_PROVIDERS || []).includes(provider)}
+                                        onChange={(e) => onStreamingProviderChange(provider, e.target.checked)}
+                                    />
+                                    <span className="text-sm text-gray-700">{provider}</span>
+                                </label>
+                            ))}
+                        </div>
+                        {(!formSettings.availableStreamingProviders || formSettings.availableStreamingProviders.length === 0) && (
+                            <p className="text-sm text-gray-500 mt-2">No streaming providers configured in the backend .env file.</p>
+                        )}
+                    </div>
+                </div>
+            </div>
+            
+            
+            
+            
+            
+            
+            
+            
+            <button onClick={onSave} className="w-full bg-blue-500 text-white rounded py-3 hover:bg-blue-600 font-medium">Save All Settings</button></div>
+        
+        
+
+        
+        
+        
+        
+        
+        
+        
+        
         </div>
     );
 });
@@ -394,6 +537,24 @@ const SmartStorageManager = () => {
         setFormSettings(prev => ({ ...prev, [field]: value }));
     }, []);
 
+        // --- NEW HANDLER for Streaming Provider Checkboxes ---
+    const handleStreamingProviderChange = useCallback((provider, isChecked) => {
+        setFormSettings(prev => {
+            const currentServices = prev.STREAMING_PROVIDERS || [];
+            let newServices;
+            if (isChecked) {
+                // Add the provider, ensuring no duplicates
+                newServices = [...new Set([...currentServices, provider])];
+            } else {
+                // Remove the provider
+                newServices = currentServices.filter(s => s !== provider);
+            }
+            return { ...prev, STREAMING_PROVIDERS: newServices };
+        });
+    }, []);
+
+
+
     const handleAddFolder = useCallback((folderType) => {
         setFormSettings(prev => ({ ...prev, [folderType]: [...(prev[folderType] || []), ''] }));
     }, []);
@@ -415,7 +576,8 @@ const SmartStorageManager = () => {
             {activeTab === 'dashboard' && <Dashboard loading={loading} error={error} storageData={storageData} archiveData={archiveData} potentialSavings={potentialSavings} libraryStats={libraryStats} candidates={candidates} executeAction={executeAction} onRetry={() => fetchDataForTab('dashboard')} />}
             {activeTab === 'content' && <ContentManagement loading={loading} error={error} allContent={allContent} executeAction={executeAction} onRetry={() => fetchDataForTab('content')} />}
             {activeTab === 'logs' && <LogViewer />}
-            {activeTab === 'settings' && <SettingsPanel loading={loading} error={error} connectionStatus={connectionStatus} formSettings={formSettings} onFieldChange={handleFieldChange} onAddFolder={handleAddFolder} onUpdateFolder={handleUpdateFolder} onDeleteFolder={handleDeleteFolder} onSave={handleSaveSettings} onRetry={() => fetchDataForTab('settings')} />}
+            {activeTab === 'settings' && <SettingsPanel loading={loading} error={error} connectionStatus={connectionStatus} formSettings={formSettings} onFieldChange={handleFieldChange} onAddFolder={handleAddFolder} onUpdateFolder={handleUpdateFolder} onDeleteFolder={handleDeleteFolder} onSave={handleSaveSettings} // --- Pass the new handler down as a prop ---
+                    onStreamingProviderChange={handleStreamingProviderChange} onRetry={() => fetchDataForTab('settings')} />}
 
             {isArchiveDialogOpen && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">

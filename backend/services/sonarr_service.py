@@ -99,6 +99,12 @@ def _calculate_fresh_summary() -> Dict:
  #   total_gb = total_size_bytes / (1024**3)
  
     all_series = sonarr_api.get_all_series()
+#Store in CACHE
+    cache_test = "Sonarr_all_series"
+    # Try to get the data from the cache first
+    #cached_data = cache.get(cache_key)
+    cache.set(cache_test, all_series, timeout=CACHE_TIMEOUT)
+
     if not all_series:
         return {'total_gb': 0.0, 'total_episodes': 0}
 
@@ -152,7 +158,18 @@ def get_series_title_id_map() -> Dict[str, int]:
     Returns:
         Dictionary of {title: id}
     """
-    series_list = sonarr_api.get_all_series()
+    cached_series_data = cache.get("Sonarr_all_series")
+    #cache.set(cache_test, all_series, timeout=CACHE_TIMEOUT)
+
+
+
+    if cached_series_data is not None:
+        logger.info("✅ Cache HIT! Returning Sonarr series from cache.")
+        series_list = cached_series_data
+        #return cached_data
+    else:
+        series_list = sonarr_api.get_all_series()
+    
     return {series['title']: series['id'] for series in series_list}
 
 def get_library_summary() -> Dict:
