@@ -137,7 +137,7 @@ const MediaItemCard = ({ item, onRuleChange, onExecuteAction }) => {
 
 // --- VIEW COMPONENTS (Moved outside the main component) ---
 
-const Dashboard = React.memo(({ loading, error, storageData, archiveData, potentialSavings, libraryStats, candidates, executeAction, onRetry }) => {
+const Dashboard = React.memo(({ loading, error, onOpenStreamingModal, storageData, archiveData, potentialSavings, libraryStats, candidates, executeAction, onRetry }) => {
     if (loading) return <LoadingSpinner />;
     if (error) return <ErrorDisplay error={error} onRetry={onRetry} />;
     return (
@@ -191,16 +191,21 @@ const Dashboard = React.memo(({ loading, error, storageData, archiveData, potent
             <Film className="w-8 h-8 text-purple-500" />
          </div>
       </div>
-      <div className="bg-white rounded-lg shadow-md p-6">
+    <div onClick={onOpenStreamingModal} className="bg-white rounded-lg shadow-md p-6 cursor-pointer hover:shadow-lg hover:border-green-400 border-2 border-transparent transition-all duration-200">
          <div className="flex items-center justify-between">
             <div>
                <h3 className="text-lg font-semibold">On Streaming</h3>
                <p className="text-2xl font-bold text-green-600">{libraryStats.onStreaming || 0}</p>
+               <p className="text-sm text-gray-500 underline">Click to view details</p>
             </div>
             <ExternalLink className="w-8 h-8 text-green-500" />
          </div>
       </div>
    </div>
+
+                
+
+
    <div className="bg-white rounded-lg shadow-md p-6">
       <h3 className="text-lg font-semibold mb-4">Recommended Actions</h3>
       <div className="space-y-3 max-h-96 overflow-y-auto">
@@ -404,10 +409,61 @@ const SettingsPanel = React.memo(({ loading, error, connectionStatus, formSettin
     );
 });
 
+// --- NEW MODAL COMPONENT ---
+const StreamingModal = ({ isOpen, onClose, mediaList }) => {
+    if (!isOpen) return null;
 
+    return (
+        // Backdrop
+        <div 
+            onClick={onClose} 
+            className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4"
+        >
+            {/* Modal Content */}
+            <div 
+                onClick={(e) => e.stopPropagation()} 
+                className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col"
+            >
+                <div className="flex justify-between items-center p-4 border-b">
+                    <h2 className="text-xl font-semibold flex items-center">
+                        <ExternalLink className="w-5 h-5 mr-2 text-green-600" />
+                        Large Media Available on Streaming
+                    </h2>
+                    <button onClick={onClose} className="text-gray-500 hover:text-gray-800">
+                        <X className="w-6 h-6" />
+                    </button>
+                </div>
+                
+                {/* Scrollable List */}
+                <div className="p-4 space-y-3 overflow-y-auto">
+                    {mediaList && mediaList.length > 0 ? (
+                        mediaList.map(item => (
+                            <div key={item.id} className="p-3 border rounded-md bg-gray-50">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center">
+                                        {item.title.includes('Movie') ? <Film className="w-4 h-4 mr-2 text-purple-500" /> : <Tv className="w-4 h-4 mr-2 text-blue-500" />}
+                                        <span className="font-medium text-gray-800">{item.title}</span>
+                                    </div>
+                                    <span className="text-sm font-semibold text-gray-700">{item.size.toFixed(1)} GB</span>
+                                </div>
+                                <p className="text-xs text-gray-500 mt-1 pl-6">
+                                    Available on: {item.streamingServices.join(', ')}
+                                </p>
+                            </div>
+                        ))
+                    ) : (
+                        <p className="text-center text-gray-500 py-8">No large media found on your preferred streaming services.</p>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
 // --- MAIN PARENT COMPONENT ---
 
 const SmartStorageManager = () => {
+    const [isStreamingModalOpen, setIsStreamingModalOpen] = useState(false);
+    const [streamingMediaData, setStreamingMediaData] = useState([]);
     // Data State
     const [storageData, setStorageData] = useState({});
     const [archiveData, setArchiveData] = useState({});
@@ -451,6 +507,8 @@ const SmartStorageManager = () => {
                     setCandidates(dashData.candidates);
                     setPotentialSavings(dashData.potentialSavings);
                     setLibraryStats(dashData.libraryStats);
+                    // --- SET THE NEW DATA FOR THE MODAL ---
+                    setStreamingMediaData(dashData.streamingMedia || []);
                     break;
                 case 'content':
                     response = await fetch(`${API_BASE_URL}/content`);
@@ -487,6 +545,12 @@ const SmartStorageManager = () => {
         fetchRootFolders(item.type === 'tv' ? 'sonarr' : 'radarr');
     }, [fetchRootFolders]);
 
+
+
+    const handleOpenStreamingModal = useCallback(() => setIsStreamingModalOpen(true), []);
+    const handleCloseStreamingModal = useCallback(() => setIsStreamingModalOpen(false), []);
+    
+    
     const handleArchiveConfirm = useCallback(async () => {
         if (!currentArchiveItem || !selectedArchiveFolder) return;
         try {
@@ -573,7 +637,7 @@ const SmartStorageManager = () => {
             <div className="mb-6"><div className="border-b border-gray-200"><nav className="-mb-px flex space-x-8">
                 {[ { id: 'dashboard', name: 'Dashboard', icon: HardDrive }, { id: 'content', name: 'Content', icon: Play }, { id: 'logs', name: 'Logs', icon: FileText }, { id: 'settings', name: 'Settings', icon: Settings }].map(({ id, name, icon: Icon }) => (<button key={id} onClick={() => setActiveTab(id)} className={`py-2 px-1 border-b-2 font-medium text-sm flex items-center ${activeTab === id ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}><Icon className="w-4 h-4 mr-2" />{name}</button>))}
             </nav></div></div>
-            {activeTab === 'dashboard' && <Dashboard loading={loading} error={error} storageData={storageData} archiveData={archiveData} potentialSavings={potentialSavings} libraryStats={libraryStats} candidates={candidates} executeAction={executeAction} onRetry={() => fetchDataForTab('dashboard')} />}
+            {activeTab === 'dashboard' && <Dashboard loading={loading} error={error} storageData={storageData} archiveData={archiveData} potentialSavings={potentialSavings} libraryStats={libraryStats} candidates={candidates} onOpenStreamingModal={handleOpenStreamingModal} executeAction={executeAction} onRetry={() => fetchDataForTab('dashboard')} />}
             {activeTab === 'content' && <ContentManagement loading={loading} error={error} allContent={allContent} executeAction={executeAction} onRetry={() => fetchDataForTab('content')} />}
             {activeTab === 'logs' && <LogViewer />}
             {activeTab === 'settings' && <SettingsPanel loading={loading} error={error} connectionStatus={connectionStatus} formSettings={formSettings} onFieldChange={handleFieldChange} onAddFolder={handleAddFolder} onUpdateFolder={handleUpdateFolder} onDeleteFolder={handleDeleteFolder} onSave={handleSaveSettings} // --- Pass the new handler down as a prop ---
@@ -593,6 +657,13 @@ const SmartStorageManager = () => {
                     </div>
                 </div>
             )}
+
+             {/* --- RENDER THE MODAL (it will be invisible until isOpen is true) --- */}
+            <StreamingModal 
+                isOpen={isStreamingModalOpen} 
+                onClose={handleCloseStreamingModal} 
+                mediaList={streamingMediaData} 
+            />
         </div>
     );
 };

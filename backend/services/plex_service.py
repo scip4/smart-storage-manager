@@ -3,7 +3,7 @@ import os
 import logging
 import requests
 from plexapi.server import PlexServer
-from models import Show, Movie
+from models import Show, Movie, SMovie, SShow, Availability, Media
 from services import sonarr_service, radarr_service
 from .cache_service import cache, CACHE_TIMEOUT
 
@@ -75,7 +75,7 @@ def check_streaming_availability(title: str, media_type: str) -> list:
         response.raise_for_status()
         providers = response.json().get('results', {}).get('US', {}).get('flatrate', [])
         provider_names = [provider['provider_name'] for provider in providers]
-        
+        all_providers = provider_names
         # Filter by STREAMING_PROVIDERS if set
         streaming_providers_env = os.getenv('STREAMING_PROVIDERS')
         if streaming_providers_env:
@@ -85,7 +85,7 @@ def check_streaming_availability(title: str, media_type: str) -> list:
             provider_names = [name for name in provider_names
                              if name.strip().lower() in allowed_providers]
         
-        return provider_names
+        return Availability(provider_names, all_providers)
     except Exception as e:
         print(f"Error checking streaming availability: {e}")
         return []
@@ -131,26 +131,39 @@ def get_plex_library():
     Public function to get Sonarr stats. It uses a cache to avoid repeated slow API calls.
     """
     cache_key = "plex_media"
-    
+    cache_key_card = "streaming_card"
     # Try to get the data from the cache first
     cached_data = cache.get(cache_key)
-    
+    cache_card_data = cache.get(cache_key_card)
     if cached_data is not None:
         logger.info("✅ Cache HIT! Returning Plex media from cache.")
         return cached_data
     
     # If not in cache, it's a "miss"
     logger.warning("⚠️  Cache MISS for Plex media. Fetching fresh data...")
-    
+    """  datac = _get_plex_library()
     # Perform the slow calculation
-    fresh_data = _get_plex_library()
+    fresh_data = datac.all_media
+    fresh_card_data = datac.streaming_media
     
     # Store the fresh data in the cache for next time
     if fresh_data and len(fresh_data) > 0:
         logger.info(f"Storing Plex Mediain cache for {CACHE_TIMEOUT} seconds.")
         cache.set(cache_key, fresh_data, timeout=CACHE_TIMEOUT)
         
-    return fresh_data
+    return fresh_data """
+
+
+     # --- MODIFIED PART ---
+    # Call the internal function and get the full Media object
+    fresh_data_object = _get_plex_library()
+    
+    # Store the entire object in the cache
+    if fresh_data_object and fresh_data_object.all_media:
+        logger.info(f"Storing full Plex Media object in cache for {CACHE_TIMEOUT} seconds.")
+        cache.set(cache_key, fresh_data_object, timeout=CACHE_TIMEOUT)
+        
+    return fresh_data_object
 
 def _get_plex_library():
     plex = get_plex_connection()
@@ -159,7 +172,7 @@ def _get_plex_library():
     all_media = []
     # Get title-to-ID mappings for shows and movies
 
-
+    streaming_media = []
 
     sonarr_title_id_map = sonarr_service.get_series_title_id_map()
     radarr_title_id_map = radarr_service.get_movie_title_id_map()
@@ -181,7 +194,16 @@ def _get_plex_library():
                 # Check streaming availability
                 streaming_services = ''
                 if size_gb > 15:
-                      streaming_services = check_streaming_availability(movie.title, 'movie')
+                      ss = check_streaming_availability(movie.title, 'movie')
+                      streaming_services = ss.provider
+                      streaming_media.append(SMovie(
+                        id=movie.ratingKey,
+                        title=movie.title,
+                        size=size_gb,
+                        streamingServices=ss.all,
+                        filePath=movie.media[0].parts[0].file if movie.media else None,
+                        rootFolderPath=spath
+                      ))
                 all_media.append(Movie(
                     id=movie.ratingKey,
                     title=movie.title, year=movie.year, size=round(size_gb, 2),
@@ -233,7 +255,17 @@ def _get_plex_library():
                 
                 # Check streaming availability
                 if size_gb >=10: 
-                    streaming_services = check_streaming_availability(show.title, 'tv')
+                    stv = check_streaming_availability(show.title, 'tv')
+                    streaming_services = stv.provider
+                    streaming_media.append(SShow(
+                    id=show.ratingKey,
+                    title=show.title,
+                    size=size_gb,
+                    streamingServices=ss.all,
+                    filePath=show.locations[0] if show.locations else None,
+                    rootFolderPath=spath
+                      ))
+
                 else:
                     streaming_services = 'TV Show under 10GB'    
                 
@@ -251,4 +283,4 @@ def _get_plex_library():
                     streamingServices=streaming_services,
                     status= 'archive-ended' if is_tv_archive_folder(spath) == True else show_status
                 ))
-    return all_media
+    return Media(all_media, streaming_media)

@@ -42,9 +42,12 @@ def perform_full_sync():
         cache.set('sonarr_summary_raw', sonarr_summary, timeout=CACHE_TIMEOUT * 2)
         radarr_summary = radarr_service.get_library_summary()
         cache.set('radarr_summary_raw', radarr_summary, timeout=CACHE_TIMEOUT * 2)
-        plex_data = plex_service.get_plex_library()
-        cache.set('plex_library_raw', plex_data, timeout=CACHE_TIMEOUT * 2)
-        analyzed_media = analysis_service.apply_rules_to_media(plex_data, load_settings())
+        plex_media_object = plex_service.get_plex_library()
+        all_media = plex_media_object.all_media
+        streaming_media_for_card = plex_media_object.streaming_media
+
+        cache.set('plex_library_raw', plex_media_object, timeout=CACHE_TIMEOUT * 2)
+        analyzed_media = analysis_service.apply_rules_to_media(all_media, load_settings())
         cache.set('analyzed_media_raw', analyzed_media, timeout=CACHE_TIMEOUT * 2)
         
         disk_stats_bytes = storage_service.get_combined_disk_usage()
@@ -124,8 +127,9 @@ def perform_full_sync():
                 'tv_episodes': tv_shows_episodes,
                 'movies': movies,
                 'movies_size': round(movies_size_gb, 1),
-                'onStreaming': len([m for m in plex_data if m.streamingServices]),
+                'onStreaming': len([m for m in plex_media_object.all_media if m.streamingServices]),
             },
+            'streamingMedia': [sm.__dict__ for sm in streaming_media_for_card],
             'recommendedActions': {
                 'endedShows': [item.__dict__ for item in ended_shows_sorted],
                 'streamingMovies': [item.__dict__ for item in streaming_movies_sorted]
