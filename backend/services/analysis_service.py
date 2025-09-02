@@ -24,12 +24,14 @@ def _cache_media_rules(media_list, settings):
         if item.type == 'tv' and item.size >= 8 and (item.status == 'ended' or item.status == 'Ended')  and item.rule in ['archive-ended', 'auto-manage']:
             #(item.status == 'ended' or item.status == 'Ended') 
             item.status = 'candidate-archive'
+            item.reason = 'TV show ended and size is over 8GB'
             continue
             
         # Rule: Delete if on a preferred streaming service
         if item.rule == 'delete-if-streaming' and item.streamingServices:
             # A more robust check would see if it's on a *preferred* service
             item.status = 'candidate-delete'
+            item.reason = f'Media status is available on {item.streamingServices}'
             continue
             
         # Rule: Archive after X months

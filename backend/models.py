@@ -15,6 +15,7 @@ class MediaItem:
     streamingServices: List[str] = field(default_factory=list)
     filePath: Optional[str] = None
     rootFolderPath: Optional[str] = None
+    reason: Optional[str] = None
 
 @dataclass
 class StreamingCard:
@@ -52,7 +53,7 @@ class Media:
     all_media: []
     streaming_media: []
 
-    
+
 @dataclass
 class Movie(MediaItem):
     type: str = 'movie'

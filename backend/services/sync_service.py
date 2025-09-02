@@ -13,7 +13,7 @@ def get_default_settings():
         "enableAutoActions": False, "checkStreamingAvailability": True,
         "preferredStreamingServices": [], "archiveFolderPath": "",
         "tvArchiveFolders": [],
-        "movieArchiveFolders": []
+        "movieArchiveFolders": [],  "archiveMappings": [] 
     }
 
 def load_settings():
@@ -42,6 +42,10 @@ def perform_full_sync():
         cache.set('sonarr_summary_raw', sonarr_summary, timeout=CACHE_TIMEOUT * 2)
         radarr_summary = radarr_service.get_library_summary()
         cache.set('radarr_summary_raw', radarr_summary, timeout=CACHE_TIMEOUT * 2)
+        sonarr_folders = sonarr_service.get_root_folders()
+        cache.set('cache_sonarr_folders', sonarr_folders, timeout=CACHE_TIMEOUT * 2)
+        radarr_folders = radarr_service.get_root_folders()
+        cache.set('cache_radarr_folders', radarr_folders, timeout=CACHE_TIMEOUT * 2)
         plex_media_object = plex_service.get_plex_library()
         all_media = plex_media_object.all_media
         streaming_media_for_card = plex_media_object.streaming_media
@@ -113,6 +117,7 @@ def perform_full_sync():
         large_movies = [item for item in analyzed_media
                             if item.type == 'movie' and item.status !='archive'] # and item.rootFolderPath.find('4K') == -1]
         large_movies_sorted = sorted(large_movies, key=lambda x: x.size, reverse=True)[:10]
+        streaming_media_for_card_sorted = sorted(streaming_media_for_card, key=lambda x: x.size, reverse=True)
 
         dashboard_data = {
             'storageData': storage_data.__dict__,
@@ -129,7 +134,7 @@ def perform_full_sync():
                 'movies_size': round(movies_size_gb, 1),
                 'onStreaming': len([m for m in plex_media_object.all_media if m.streamingServices]),
             },
-            'streamingMedia': [sm.__dict__ for sm in streaming_media_for_card],
+            'streamingMedia': [sm.__dict__ for sm in streaming_media_for_card_sorted],
             'recommendedActions': {
                 'endedShows': [item.__dict__ for item in ended_shows_sorted],
                 'streamingMovies': [item.__dict__ for item in streaming_movies_sorted]

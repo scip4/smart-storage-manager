@@ -60,6 +60,48 @@ BASE_URL = os.getenv('SONARR_URL')
 API_KEY = os.getenv('SONARR_API_KEY')
 sonarr_api = SonarrAPI(BASE_URL, API_KEY) if BASE_URL and API_KEY else None
 
+
+# --- NEW FUNCTION ---
+def _get_root_folders() -> List[dict]: # Changed return type hint
+    """Fetches all configured root folder objects from Sonarr."""
+    if not sonarr_api:
+        logger.warning("Cannot get Sonarr root folders: service not configured.")
+        return []
+    try:
+        logger.debug("Fetching Sonarr root folders.")
+        response = sonarr_api.session.get(f'{sonarr_api.base_url}/api/v3/rootfolder')
+        response.raise_for_status()
+        # --- FIX: Return the full list of folder objects ---
+        return response.json()
+    except Exception as e:
+        logger.error(f"Failed to fetch Sonarr root folders: {e}", exc_info=True)
+        return []
+
+
+def get_root_folders() -> List[dict]:
+    cache_key = "cache_sonarr_folders"
+
+    # Try to get the data from the cache first
+    cached_data = cache.get(cache_key)
+    
+    if cached_data is not None:
+        logger.info("✅ Cache HIT! Returning Sonarr summary from cache.")
+        return cached_data
+    
+    # If not in cache, it's a "miss"
+    logger.warning("⚠️  Cache MISS for Sonarr summary. Fetching fresh data...")
+    
+    # Perform the slow calculation
+    fresh_data = _get_root_folders()
+    
+    # Store the fresh data in the cache for next time
+    if fresh_data:
+        logger.info(f"Storing Sonarr folder in cache for {CACHE_TIMEOUT} seconds.")
+        cache.set(cache_key, fresh_data, timeout=CACHE_TIMEOUT)
+        #cache.set(cache_test, fresh_data['seriesData'], timeout=CACHE_TIMEOUT)
+        
+    return fresh_data
+
 def _calculate_fresh_summary() -> Dict:
     """
     Performs the slow, uncached calculation by hitting the Sonarr API.
@@ -229,6 +271,33 @@ def update_show_root_folder(show_id: int, new_root_folder_path: str):
         show_data = show_res.json()
 
         show_data["rootFolderPath"] = new_root_folder_path
+        
+        update_res = sonarr_api.session.put(f'{sonarr_api.base_url}/api/v3/series/{show_id}', json=show_data)
+        update_res.raise_for_status()
+        
+        sonarr_api.session.post(f'{sonarr_api.base_url}/api/v3/command', json={'name': 'RescanSeries', 'seriesId': show_id})
+        
+        # --- CACHE INVALIDATION ---
+        # The summary is now outdated, so we must clear it.
+        logger.info("Sonarr data changed. Clearing library summary cache.")
+        cache.delete("sonarr_library_summary")
+        
+        return True, "Successfully updated show's root folder in Sonarr."
+    except Exception as e:
+        logger.error(f"Failed to update show ID {show_id} in Sonarr: {e}", exc_info=True)
+        return False, f"Failed to update show in Sonarr: {e}"
+
+def unmonitor_show(show_id: int):
+    """Updates a show in Sonarr and clears the cache to reflect changes."""
+    if not sonarr_api: return False, "Sonarr not configured."
+    
+    try:
+        logger.info(f"Updating Sonarr root folder for show ID {show_id}.")
+        show_res = sonarr_api.session.get(f'{sonarr_api.base_url}/api/v3/series/{show_id}')
+        show_res.raise_for_status()
+        show_data = show_res.json()
+
+        show_data["monitored"] = false
         
         update_res = sonarr_api.session.put(f'{sonarr_api.base_url}/api/v3/series/{show_id}', json=show_data)
         update_res.raise_for_status()

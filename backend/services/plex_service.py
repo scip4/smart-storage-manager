@@ -54,7 +54,7 @@ def check_streaming_availability(title: str, media_type: str) -> list:
     """
     API_KEY = os.getenv('TMDB_API_KEY')
     if not API_KEY:
-        return []
+        return Availability([], [])
     
     # First, search for the media ID
     search_url = f"https://api.themoviedb.org/3/search/{media_type}"
@@ -64,7 +64,7 @@ def check_streaming_availability(title: str, media_type: str) -> list:
         response.raise_for_status()
         results = response.json().get('results', [])
         if not results:
-            return []
+            return Availability([], [])
         
         # Get the first result
         media_id = results[0]['id']
@@ -88,7 +88,7 @@ def check_streaming_availability(title: str, media_type: str) -> list:
         return Availability(provider_names, all_providers)
     except Exception as e:
         print(f"Error checking streaming availability: {e}")
-        return []
+        return Availability([], [])
 
 def get_plex_connection():
     # ... (no changes to this function)
@@ -120,6 +120,7 @@ def delete_media_from_plex(media_id: str) -> tuple[bool, str]:
         key = f'/library/metadata/{media_id}'
         media_item = plex.fetchItem(key)
         media_item.delete()
+        sona
         return True, f"Successfully deleted media with ID {media_id}"
     except Exception as e:
         error_msg = f"Error deleting media with ID {media_id}: {str(e)}"
@@ -196,13 +197,14 @@ def _get_plex_library():
                 if size_gb > 15:
                       ss = check_streaming_availability(movie.title, 'movie')
                       streaming_services = ss.provider
-                      streaming_media.append(SMovie(
-                        id=movie.ratingKey,
-                        title=movie.title,
-                        size=size_gb,
-                        streamingServices=ss.all,
-                        filePath=movie.media[0].parts[0].file if movie.media else None,
-                        rootFolderPath=spath
+                      if ss.all is not None:
+                        streaming_media.append(SMovie(
+                            id=movie.ratingKey,
+                            title=movie.title,
+                            size=size_gb,
+                            streamingServices=ss.all,
+                            filePath=movie.media[0].parts[0].file if movie.media else None,
+                            rootFolderPath=spath
                       ))
                 all_media.append(Movie(
                     id=movie.ratingKey,
@@ -254,17 +256,18 @@ def _get_plex_library():
                     size_gb = sonarr_service.get_series_size(sonarr_id) / (1024**3) if sonarr_id else 0
                 
                 # Check streaming availability
-                if size_gb >=10: 
+                if size_gb >=10:
                     stv = check_streaming_availability(show.title, 'tv')
                     streaming_services = stv.provider
-                    streaming_media.append(SShow(
-                    id=show.ratingKey,
-                    title=show.title,
-                    size=size_gb,
-                    streamingServices=ss.all,
-                    filePath=show.locations[0] if show.locations else None,
-                    rootFolderPath=spath
-                      ))
+                    if len(stv.all) > 0:
+                        streaming_media.append(SShow(
+                        id=show.ratingKey,
+                        title=show.title,
+                        size=size_gb,
+                        streamingServices=stv.all,
+                        filePath=show.locations[0] if show.locations else None,
+                        rootFolderPath=spath
+                        ))
 
                 else:
                     streaming_services = 'TV Show under 10GB'    

@@ -10,8 +10,9 @@ from apscheduler.schedulers.background import BackgroundScheduler
 import threading
 # --- Add sync_service import ---
 from services.sync_service import perform_full_sync
-from services import plex_service, sonarr_service, radarr_service, analysis_service, file_service, storage_service
+from services import plex_service, sonarr_service, radarr_service, analysis_service, file_service, storage_service, cleanup_service
 from services.cache_service import cache, CACHE_TIMEOUT
+#from services import cleanup_service
 
 # --- NEW: SCHEDULER SETUP ---
 # This block initializes and starts the background task scheduler.
@@ -26,6 +27,20 @@ scheduler.add_job(
 )
 # We also run the job once immediately on startup so the app has data right away.
 scheduler.add_job(func=perform_full_sync, id='initial_sync_job')
+
+# --- NEW: SCHEDULE THE DAILY CLEANUP JOB ---
+# This schedules the cleanup function to run once per day at 3:00 AM server time.
+scheduler.add_job(
+    func=cleanup_service.perform_cleanup_actions,
+    trigger='cron',
+    hour=3,
+    minute=0,
+    id='daily_cleanup_job'
+)
+logging.info("Scheduled daily cleanup job for 3:00 AM.")
+
+
+
 scheduler.start()
 logging.info("Background scheduler started. Sync task scheduled for every 30 minutes.")
 
@@ -73,28 +88,66 @@ from services import plex_service, sonarr_service, radarr_service, analysis_serv
 
 SETTINGS_FILE = 'settings.json'
 
+def _load_mappings_from_env() -> list:
+    """
+    Parses the ARCHIVE_MAPPINGS_ENV environment variable into a list of mapping objects.
+    """
+    mappings_str = os.getenv('ARCHIVE_MAPPINGS_ENV')
+    if not mappings_str:
+        return []
+
+    env_mappings = []
+    # Split mappings by semicolon
+    raw_mappings = [m.strip() for m in mappings_str.split(';') if m.strip()]
+    
+    for mapping_str in raw_mappings:
+        # Split each mapping by pipe
+        parts = [p.strip() for p in mapping_str.split('|')]
+        if len(parts) == 3:
+            mapping_type, source, destination = parts
+            if mapping_type in ['tv', 'movie'] and source and destination:
+                env_mappings.append({
+                    "type": mapping_type,
+                    "source": source,
+                    "destination": destination
+                })
+            else:
+                logging.warning(f"Skipping invalid environment archive mapping: {mapping_str}")
+        else:
+            logging.warning(f"Skipping invalid environment archive mapping format: {mapping_str}")
+            
+    if env_mappings:
+        logging.info(f"Loaded {len(env_mappings)} archive mappings from .env file.")
+        
+    return env_mappings
+
+
 def get_default_settings():
     return {
         "autoDeleteAfterDays": 30, "archiveAfterMonths": 6, "keepFreeSpace": 500,
         "enableAutoActions": False, "checkStreamingAvailability": True,
         "preferredStreamingServices": [], "archiveFolderPath": "","availableStreamingProviders": [],
         "tvArchiveFolders": [],
-        "movieArchiveFolders": []
+        "movieArchiveFolders": [],
+        "archiveMappings": []  # Will be a list of {"source": "/path", "destination": "/path"}
     }
-
-def load_settings():
-    try:
-        with open(SETTINGS_FILE, 'r') as f:
-            defaults = get_default_settings()
-            #defaults
-            user_settings = json.load(f)
-            defaults.update(user_settings)
-            return defaults
-    except (FileNotFoundError, json.JSONDecodeError):
-        return get_default_settings()
 
 def save_settings(settings):
     with open(SETTINGS_FILE, 'w') as f: json.dump(settings, f, indent=2)
+
+
+# --- NEW: MANUAL CLEANUP TRIGGER ENDPOINT ---
+@app.route('/api/cleanup/trigger', methods=['POST'])
+def trigger_manual_cleanup():
+    logger.info("Manual cleanup triggered by user.")
+    
+    # Run in a background thread to return an immediate response
+    cleanup_thread = threading.Thread(target=cleanup_service.perform_cleanup_actions)
+    cleanup_thread.start()
+    
+    return jsonify({"message": "Cleanup task started in the background. Check logs for progress."}), 202
+
+
 
 @app.route('/api/status')
 def status():
@@ -122,7 +175,23 @@ def get_logs():
 
 
 
-
+# --- NEW ENDPOINT ---
+@app.route('/api/root-folders')
+def get_all_root_folders():
+    """
+    Returns a dictionary containing lists of root folders from Sonarr and Radarr.
+    """
+    logging.debug("Root folder list requested from UI.")
+    try:
+        sonarr_folders = sonarr_service.get_root_folders()
+        radarr_folders = radarr_service.get_root_folders()
+        return jsonify({
+            "sonarr": sonarr_folders,
+            "radarr": radarr_folders
+        })
+    except Exception as e:
+        logger.error(f"Error fetching all root folders: {e}", exc_info=True)
+        return jsonify({"message": "Failed to retrieve root folders."}), 500
 
 
 
@@ -296,6 +365,7 @@ def perform_full_sync_and_clear_flag():
 @app.route('/api/content')
 def get_content_data():
     logging.info("Full content list requested.")
+    from config import load_settings
     settings = load_settings()
     all_media = plex_service.get_plex_library()
     analyzed_media = analysis_service.apply_rules_to_media(all_media, settings)
@@ -316,7 +386,7 @@ def handle_settings():
             'TMDB_API_KEY', 'MOUNT_POINTS',
             'ARCHIVE_DRIVE', 'STREAMING_PROVIDERS',
             'TV_ARCHIVE_FOLDERS', 'MOVIE_ARCHIVE_FOLDERS',
-            'DATA_UPDATE_INTERVAL','AVAILABLE_STREAMING_PROVIDERS'
+            'DATA_UPDATE_INTERVAL','AVAILABLE_STREAMING_PROVIDERS','ENABLE_AUTO_ACTIONS',
         ]
         
         env_lines = []
@@ -334,6 +404,7 @@ def handle_settings():
         return jsonify(new_settings)
     
     logging.debug("Settings data requested.")
+    from config import load_settings
     settings = load_settings()
     
     # Get TV and movie archive folders from environment variables
@@ -358,7 +429,7 @@ def handle_settings():
     providers_str = os.getenv('AVAILABLE_STREAMING_PROVIDERS', '')
     available_providers = [p.strip() for p in providers_str.split(',') if p.strip()]
 
-    settings['availableStreamingProviders'] = available_providers       
+    settings['availableStreamingProviders'] = available_providers
     return jsonify(settings)
 
 @app.route('/api/root-folders', methods=['GET'])
@@ -410,6 +481,7 @@ def handle_action(media_id):
         return jsonify({'status': 'error', 'message': message}), 500
             
     elif action == 'archive':
+        from config import load_settings
         settings = load_settings()
         settings['tvArchiveFolders'] = [f for f in os.getenv('TV_ARCHIVE_FOLDERS', '').split(',') if f]
         settings['movieArchiveFolders'] = [f for f in os.getenv('MOVIE_ARCHIVE_FOLDERS', '').split(',') if f]

@@ -61,6 +61,47 @@ class RadarrAPI:
 BASE_URL = os.getenv('RADARR_URL')
 API_KEY = os.getenv('RADARR_API_KEY')
 
+
+def _get_root_folders() -> List[dict]: # Changed return type hint
+    """Fetches all configured root folder objects from Radarr."""
+    if not BASE_URL or not API_KEY:
+        logger.warning("Cannot get Radarr root folders: service not configured.")
+        return []
+    try:
+        logger.debug("Fetching Radarr root folders.")
+        headers = {'X-Api-Key': API_KEY}
+        response = requests.get(f'{BASE_URL}/api/v3/rootfolder', headers=headers)
+        response.raise_for_status()
+        # --- FIX: Return the full list of folder objects ---
+        return response.json()
+    except Exception as e:
+        logger.error(f"Failed to fetch Radarr root folders: {e}", exc_info=True)
+        return []
+
+def get_root_folders() -> List[dict]:
+    cache_key = "cache_radarr_folders"
+
+    # Try to get the data from the cache first
+    cached_data = cache.get(cache_key)
+    
+    if cached_data is not None:
+        logger.info("✅ Cache HIT! Returning Sonarr summary from cache.")
+        return cached_data
+    
+    # If not in cache, it's a "miss"
+    logger.warning("⚠️  Cache MISS for Sonarr summary. Fetching fresh data...")
+    
+    # Perform the slow calculation
+    fresh_data = _get_root_folders()
+    
+    # Store the fresh data in the cache for next time
+    if fresh_data:
+        logger.info(f"Storing SRadarrfolder in cache for {CACHE_TIMEOUT} seconds.")
+        cache.set(cache_key, fresh_data, timeout=CACHE_TIMEOUT)
+        #cache.set(cache_test, fresh_data['seriesData'], timeout=CACHE_TIMEOUT)
+        
+    return fresh_data
+
 radarr_api = None
 if BASE_URL and API_KEY:
     radarr_api = RadarrAPI(BASE_URL, API_KEY)
@@ -224,6 +265,28 @@ def get_movie_root_folder(movie_id: int) -> Optional[str]:
     except Exception as e:
         logger.error(f"Error fetching movie root folder: {e}", exc_info=True)
         return None
+def unmonitor_movie(movie_id: int):
+    """Updates a show in Sonarr and clears the cache to reflect changes."""
+    if not radarr_api: return False, "Sonarr not configured."
+    
+    try:
+        logger.info(f"Updating Sonarr root folder for show ID {movie_id}.")
+        show_res = sonarr_api.session.get(f'{radarr_api.base_url}/api/v3/movie/{show_id}')
+        show_res.raise_for_status()
+        show_data = show_res.json()
+
+        show_data["monitored"] = false
+        
+        update_res = sonarr_api.session.put(f'{sonarr_api.base_url}/api/v3/movie/{movie_id}', json=show_data)
+        update_res.raise_for_status()
+        
+        radarr_api.session.post(f'{radarr_api.base_url}/api/v3/command', json={'name': 'RescanMovie', 'movieIds': [movie_id]})
+        
+        logger.info(f"Successfully updated movie ID {movie_id} in Radarr and triggered rescan.")
+        return True, "Successfully updated movie's root folder in Radarr."
+    except Exception as e:
+        logger.error(f"Failed to update movie ID {movie_id} in Radarr: {e}", exc_info=True)
+        return False, f"Failed to update movie in Radarr: {e}"
 
 def move_radarr_movie(current_path, archive_root_path, movie_id):
     """Updates a movie's root folder path and triggers a file move in Radarr."""
