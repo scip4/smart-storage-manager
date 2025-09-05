@@ -43,7 +43,7 @@ def get_default_settings():
     return {
         "autoDeleteAfterDays": 30, "archiveAfterMonths": 6, "keepFreeSpace": 500,
         "enableAutoActions": False, "checkStreamingAvailability": True,
-        "preferredStreamingServices": [],
+        "preferredStreamingServices": [], "availableTvArchiveFolders": "", "availableMovieArchiveFolders": "",
         "archiveMappings": []
     }
 

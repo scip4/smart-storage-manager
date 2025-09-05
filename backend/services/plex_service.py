@@ -120,7 +120,6 @@ def delete_media_from_plex(media_id: str) -> tuple[bool, str]:
         key = f'/library/metadata/{media_id}'
         media_item = plex.fetchItem(key)
         media_item.delete()
-        sona
         return True, f"Successfully deleted media with ID {media_id}"
     except Exception as e:
         error_msg = f"Error deleting media with ID {media_id}: {str(e)}"

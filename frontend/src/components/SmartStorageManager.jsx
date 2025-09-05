@@ -494,11 +494,41 @@ const ContentManagement = React.memo(({ loading, error, allContent, executeActio
     );
 });
 
+
+const DryRunModal = ({ isOpen, onClose, results, isRunning }) => {
+    if (!isOpen) return null;
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col border border-slate-200">
+                <div className="p-6 border-b"><h2 className="text-2xl font-bold text-slate-800">Dry Run Results</h2></div>
+                <div className="p-6 space-y-2 overflow-y-auto bg-slate-50 flex-grow">
+                    {isRunning ? (
+                        <div className="flex items-center justify-center h-full"><LoadingSpinner /></div>
+                    ) : (
+                        (results || []).map((line, index) => {
+                            let color = 'text-slate-600';
+                            if (line.includes('[ARCHIVE]')) color = 'text-indigo-600 font-medium';
+                            if (line.includes('[DELETE]')) color = 'text-red-600 font-medium';
+                            if (line.includes('[SKIP]')) color = 'text-amber-600';
+                            return <p key={index} className={`font-mono text-sm ${color}`}>{line}</p>
+                        })
+                    )}
+                </div>
+                <div className="p-4 bg-slate-100 border-t flex justify-end">
+                    <ActionButton onClick={onClose} variant="secondary">Close</ActionButton>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+
 const SettingsPanel = React.memo(({ loading, error, connectionStatus, 
     formSettings, onFieldChange, onAddFolder, onUpdateFolder, onDeleteFolder, 
     onSave, onRetry, onStreamingProviderChange, onAddMapping, onUpdateMapping, 
     onDeleteMapping, handleManualCleanup, isCleaningUp, cleanupMessage, 
-    sonarrRootFolders, radarrRootFolders }) => {
+    sonarrRootFolders, radarrRootFolders}) => {
     const [isSyncing, setIsSyncing] = useState(false);
     const [syncMessage, setSyncMessage] = useState('');
 
@@ -585,43 +615,73 @@ const SettingsPanel = React.memo(({ loading, error, connectionStatus,
                     </div>
                 )}
             </div>
-                        <div className="bg-white rounded-lg shadow-md p-6">
-                <h3 className="text-lg font-semibold mb-4">Automation Settings</h3>
-                <div className="space-y-4">
-                    <div className="p-4 bg-yellow-50 border-l-4 border-yellow-400">
-                        <div className="flex">
-                            <div className="flex-shrink-0"><AlertTriangle className="h-5 w-5 text-yellow-400" /></div>
-                            <div className="ml-3"><p className="text-sm text-yellow-700"><strong>Warning:</strong> Enabling this will allow the system to automatically delete and archive media from your library based on your rules. Please review your rules carefully.</p></div>
-                        </div>
+                         {/* --- NEW/RESTORED AUTOMATION SETTINGS SECTION --- */}
+            <div className="bg-white rounded-xl shadow-lg p-8 border border-slate-100">
+                <div className="flex items-center mb-6">
+                    <div className="p-3 bg-amber-100 rounded-xl mr-4">
+                        <AlertTriangle className="w-8 h-8 text-amber-600" />
                     </div>
-
-                    <label className="flex items-center space-x-3 cursor-pointer">
-                        <input
-                            type="checkbox"
-                            className="h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                            checked={formSettings.enableAutoActions || false}
-                            onChange={(e) => onFieldChange('enableAutoActions', false, e.target.checked)}
-                        />
-                        <span className="font-medium text-gray-700">Enable Automatic Actions</span>
-                    </label>
-
-                    <div className="pt-4 border-t">
-                        <button
-                            onClick={handleManualCleanup}
-                            disabled={isCleaningUp}
-                            className="px-6 py-2 bg-orange-500 text-white font-semibold rounded-lg shadow-md hover:bg-orange-600 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center"
-                        >
-                            <Trash2 className={`w-5 h-5 mr-2 ${isCleaningUp ? 'animate-spin' : ''}`} />
-                            {isCleaningUp ? 'Cleaning Up...' : 'Run Cleanup Now'}
-                        </button>
-                        {cleanupMessage && (
-                            <p className={`text-sm mt-3 text-center p-2 rounded ${cleanupMessage.startsWith('Error:') ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
-                                {cleanupMessage}
-                            </p>
-                        )}
+                    <div>
+                        <h3 className="text-2xl font-bold text-slate-800">Automation Settings</h3>
+                        <p className="text-slate-600">Configure and control automated library cleanup</p>
                     </div>
                 </div>
+                
+                <div className="space-y-6">
+                    <div className="p-4 bg-yellow-50 border-l-4 border-yellow-400">
+                        <div className="flex"><div className="flex-shrink-0"><AlertTriangle className="h-5 w-5 text-yellow-400" /></div><div className="ml-3"><p className="text-sm text-yellow-700"><strong>Warning:</strong> Enabling this will allow the system to automatically delete and archive media from your library based on your rules.</p></div></div>
+                    </div>
+
+                    <label className="flex items-center space-x-4 p-4 bg-slate-50 rounded-lg cursor-pointer hover:bg-slate-100">
+                        <input
+                            type="checkbox"
+                            className="h-6 w-6 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            checked={formSettings.enableAutoActions || false}
+                            // Use the corrected handler
+                            onChange={onFieldChange('enableAutoActions', false, true)}
+                        />
+                        <span className="font-bold text-lg text-slate-700">Enable Automatic Actions</span>
+                    </label>
+
+                    {/* ... Header for Automation Settings ... */}
+                <div className="pt-6 border-t border-slate-200">
+                    <h4 className="font-semibold text-slate-700 mb-2">Manual Cleanup</h4>
+                    <p className="text-sm text-slate-500 mb-4">Run the cleanup job immediately or perform a dry run to see what would happen.</p>
+                    
+                    {/* --- UPDATED: Button is now a dropdown --- */}
+                    <div className="flex space-x-3">
+                        <ActionButton
+                            onClick={() => handleManualCleanup(false)} // false for live run
+                            disabled={isCleaningUp}
+                            variant="danger"
+                            icon={Trash2}
+                        >
+                            {isCleaningUp ? 'Cleaning Up...' : 'Run Cleanup Now'}
+                        </ActionButton>
+                        <ActionButton
+                            onClick={() => handleManualCleanup(true)} // true for dry run
+                            disabled={isCleaningUp}
+                            variant="secondary"
+                            icon={FileText}
+                        >
+                           Perform Dry Run
+                        </ActionButton>
+                    </div>
+                    {cleanupMessage && (
+                        <p className={`text-sm mt-4 text-center p-3 rounded-lg ${
+                            cleanupMessage.startsWith('Error:') 
+                            ? 'bg-red-100 text-red-700 border border-red-200' 
+                            : 'bg-green-100 text-green-700 border border-green-200'
+                        }`}>
+                            {cleanupMessage}
+                        </p>
+                    )}
+                </div>
             </div>
+            </div>
+            
+
+
             {/* Configuration */}
             <div className="bg-white rounded-xl shadow-lg p-8 border border-slate-100">
                 <div className="flex items-center mb-8">
@@ -809,7 +869,20 @@ const SettingsPanel = React.memo(({ loading, error, connectionStatus,
                                         ))}
                                     </select>
                                 </div>
-                                <div className="col-span-5"><input type="text" placeholder="/path/to/tv-archive" value={mapping.destination || ''} onChange={(e) => onUpdateMapping(index, 'destination', e.target.value, 'tv')} className="w-full border rounded px-3 py-1.5" /></div>
+                                <div className="col-span-5">
+                                    
+                                    
+                                     {/* --- MODIFIED: Destination is now a dropdown --- */}
+                                    <select
+                                        value={mapping.destination || ''}
+                                        onChange={(e) => onUpdateMapping(index, 'destination', e.target.value, 'tv')}
+                                        className="w-full px-4 py-3 border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-blue-500"
+                                    >
+                                        <option value="" disabled>Select a TV Archive Folder...</option>
+                                        {(formSettings.TV_ARCHIVE_FOLDERS || []).map(path => <option key={path} value={path}>{path}</option>)}
+                                    </select>
+                                
+                                </div>
                                 <div className="col-span-2 flex justify-end"><button onClick={() => onDeleteMapping(index, 'tv')} className="p-2 text-red-500 hover:bg-red-100 rounded"><Trash2 className="w-4 h-4" /></button></div>
                             </div>
                         ))}
@@ -832,7 +905,19 @@ const SettingsPanel = React.memo(({ loading, error, connectionStatus,
                                         ))}
                                     </select>
                                 </div>
-                                <div className="col-span-5"><input type="text" placeholder="/path/to/movie-archive" value={mapping.destination || ''} onChange={(e) => onUpdateMapping(index, 'destination', e.target.value, 'movie')} className="w-full border rounded px-3 py-1.5" /></div>
+                                <div className="col-span-5">
+                                    
+                                     {/* --- MODIFIED: Destination is now a dropdown --- */}
+                                    <select
+                                        value={mapping.destination || ''}
+                                        onChange={(e) => onUpdateMapping(index, 'destination', e.target.value, 'movie')}
+                                        className="w-full px-4 py-3 border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-blue-500"
+                                    >
+                                        <option value="" disabled>Select a Movie Archive Folder...</option>
+                                        {(formSettings.MOVIE_ARCHIVE_FOLDERS || []).map(path => <option key={path} value={path}>{path}</option>)}
+                                    </select>
+                                    
+                                    </div>
                                 <div className="col-span-2 flex justify-end"><button onClick={() => onDeleteMapping(index, 'movie')} className="p-2 text-red-500 hover:bg-red-100 rounded"><Trash2 className="w-4 h-4" /></button></div>
                             </div>
                         ))}
@@ -994,6 +1079,11 @@ const StreamingModal = ({ isOpen, onClose, mediaList }) => {
 
 // Main Component
 const SmartStorageManager = () => {
+    // --- NEW STATE for the Dry Run modal ---
+    const [isDryRunModalOpen, setIsDryRunModalOpen] = useState(false);
+    const [dryRunResults, setDryRunResults] = useState([]);
+    const [isDryRunRunning, setIsDryRunRunning] = useState(false);
+    
     // --- NEW STATE for root folders ---
     const [sonarrRootFolders, setSonarrRootFolders] = useState([]);
     const [radarrRootFolders, setRadarrRootFolders] = useState([]);
@@ -1050,23 +1140,35 @@ const SmartStorageManager = () => {
                     setAllContent(await response.json());
                     break;
                 case 'settings':
-                    const [settingsRes, statusRes, rootFoldersRes] = await Promise.all([
-                    fetch(`${API_BASE_URL}/settings`),
-                    fetch(`${API_BASE_URL}/status`),
-                    fetch(`${API_BASE_URL}/root-folders`)
+                    const [settingsRes, statusRes] = await Promise.all([
+                        fetch(`${API_BASE_URL}/settings`),
+                        fetch(`${API_BASE_URL}/status`)
                     ]);
-                    if (!settingsRes.ok || !statusRes.ok || !rootFoldersRes.ok) throw new Error('Failed to fetch settings data.');
+                    if (!settingsRes.ok || !statusRes.ok) throw new Error('Failed to fetch settings data.');
                     const settingsData = await settingsRes.json();
-                
-                    // --- KEY CHANGE: Directly set the formSettings state ---
-                    // We no longer need the intermediate 'settings' state variable.
                     setFormSettings(settingsData);
-                    //setSettings(await settingsRes.json());
                     setConnectionStatus(await statusRes.json());
                     
-                    const rootFoldersData = await rootFoldersRes.json();
-                    setSonarrRootFolders(rootFoldersData.sonarr || []);
-                    setRadarrRootFolders(rootFoldersData.radarr || []);
+                    // Fetch root folders separately with type parameters
+                    try {
+                        const sonarrRes = await fetch(`${API_BASE_URL}/root-folders?type=sonarr`);
+                        if (!sonarrRes.ok) throw new Error('Failed to fetch Sonarr root folders');
+                        const sonarrData = await sonarrRes.json();
+                        setSonarrRootFolders(sonarrData.folders || []);
+                    } catch (err) {
+                        console.error('Error fetching Sonarr root folders:', err);
+                        setSonarrRootFolders([]);
+                    }
+                    
+                    try {
+                        const radarrRes = await fetch(`${API_BASE_URL}/root-folders?type=radarr`);
+                        if (!radarrRes.ok) throw new Error('Failed to fetch Radarr root folders');
+                        const radarrData = await radarrRes.json();
+                        setRadarrRootFolders(radarrData.folders || []);
+                    } catch (err) {
+                        console.error('Error fetching Radarr root folders:', err);
+                        setRadarrRootFolders([]);
+                    }
                     break;
                 default: break;
             }
@@ -1075,16 +1177,34 @@ const SmartStorageManager = () => {
 
     useEffect(() => { fetchDataForTab(activeTab); }, [activeTab, fetchDataForTab]);
 
+    // --- FILLED-IN `fetchRootFolders` FUNCTION ---
     const fetchRootFolders = useCallback(async (type) => {
         try {
             const response = await fetch(`${API_BASE_URL}/root-folders?type=${type}`);
             const data = await response.json();
+
             if (response.ok) {
-                setArchiveFolders(data.folders);
-                if (data.folders.length > 0) { setSelectedArchiveFolder(data.folders[0].path); }
-            } else { throw new Error(data.message || 'Failed to fetch root folders'); }
-        } catch (err) { alert(`Error: ${err.message}`); }
-    }, []);
+                // The backend returns an object like { folders: [{id: 1, path: '/...'}, ...] }
+                const folders = data.folders || [];
+                setArchiveFolders(folders);
+                
+                // Set the default selected folder to the first one in the list
+                if (folders.length > 0) {
+                    setSelectedArchiveFolder(folders[0].path);
+                } else {
+                    // Reset if no folders are returned, preventing stale selections
+                    setSelectedArchiveFolder('');
+                    alert(`No root folders found for ${type}. Please configure them in Sonarr/Radarr.`);
+                }
+            } else {
+                throw new Error(data.message || `Failed to fetch ${type} root folders.`);
+            }
+        } catch (err) {
+            alert(`Error fetching root folders: ${err.message}`);
+            setArchiveFolders([]); // Clear folders on error to prevent issues
+        }
+    }, []); // API_BASE_URL is a constant, so no dependencies are needed.
+
 
     const openArchiveDialog = useCallback((item) => {
         setCurrentArchiveItem(item);
@@ -1155,28 +1275,57 @@ const SmartStorageManager = () => {
 
 
 
-    // --- UPDATED field change handler ---
+    // --- CORRECTED `handleFieldChange` HANDLER ---
     const handleFieldChange = useCallback((field, isArray = false, isCheckbox = false) => (e) => {
-        const value = isCheckbox ? e.target.checked : (isArray ? e.target.value.split(',').map(s => s.trim()) : e.target.value);
+        // This is the key fix: check if it's a checkbox and use e.target.checked
+        const value = isCheckbox 
+            ? e.target.checked 
+            : (isArray ? e.target.value.split(',').map(s => s.trim()) : e.target.value);
+            
         setFormSettings(prev => ({ ...prev, [field]: value }));
     }, []);
 
-    // --- NEW handler for the manual cleanup button ---
-    const handleManualCleanup = useCallback(async () => {
-        setIsCleaningUp(true);
-        setCleanupMessage('');
+    // --- UPDATED Manual Cleanup Handler ---
+    const handleManualCleanup = useCallback(async (isDryRun = false) => {
+        if (isDryRun) {
+            setIsDryRunModalOpen(true);
+            setIsDryRunRunning(true);
+            setDryRunResults([]);
+        } else {
+            setIsCleaningUp(true);
+            setCleanupMessage('');
+        }
+        
         try {
-            const response = await fetch(`${API_BASE_URL}/cleanup/trigger`, { method: 'POST' });
+            const response = await fetch(`${API_BASE_URL}/cleanup/trigger`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ dryRun: isDryRun }) // Send the flag
+            });
             const data = await response.json();
             if (!response.ok) { throw new Error(data.message); }
-            setCleanupMessage(data.message);
-            setTimeout(() => setCleanupMessage(''), 5000);
+            
+            if (isDryRun) {
+                setDryRunResults(data.results || ['No results returned.']);
+            } else {
+                setCleanupMessage(data.message);
+                setTimeout(() => setCleanupMessage(''), 5000);
+            }
         } catch (err) {
-            setCleanupMessage(`Error: ${err.message}`);
+            if (isDryRun) {
+                setDryRunResults([`Error: ${err.message}`]);
+            } else {
+                setCleanupMessage(`Error: ${err.message}`);
+            }
         } finally {
-            setTimeout(() => setIsCleaningUp(false), 3000);
+            if (isDryRun) {
+                setIsDryRunRunning(false);
+            } else {
+                setTimeout(() => setIsCleaningUp(false), 3000);
+            }
         }
     }, []);
+
 
     const handleStreamingProviderChange = useCallback((provider, isChecked) => {
         setFormSettings(prev => {
@@ -1352,7 +1501,7 @@ const SmartStorageManager = () => {
                                     value={selectedArchiveFolder} 
                                     onChange={(e) => setSelectedArchiveFolder(e.target.value)}
                                 >
-                                    {archiveFolders.map(folder => (
+                                    {(archiveFolders || []).map(folder => (
                                         <option key={folder.path} value={folder.path}>{folder.path}</option>
                                     ))}
                                 </select>
@@ -1375,7 +1524,13 @@ const SmartStorageManager = () => {
                         </div>
                     </div>
                 )}
-
+                {/* --- RENDER THE NEW MODAL --- */}
+                <DryRunModal
+                    isOpen={isDryRunModalOpen}
+                    onClose={() => setIsDryRunModalOpen(false)}
+                    results={dryRunResults}
+                    isRunning={isDryRunRunning}
+                />
                 {/* Streaming Modal */}
                 <StreamingModal 
                     isOpen={isStreamingModalOpen} 

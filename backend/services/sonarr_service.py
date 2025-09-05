@@ -307,12 +307,42 @@ def unmonitor_show(show_id: int):
         # --- CACHE INVALIDATION ---
         # The summary is now outdated, so we must clear it.
         logger.info("Sonarr data changed. Clearing library summary cache.")
-        cache.delete("sonarr_library_summary")
+        #cache.delete("sonarr_library_summary")
         
         return True, "Successfully updated show's root folder in Sonarr."
     except Exception as e:
         logger.error(f"Failed to update show ID {show_id} in Sonarr: {e}", exc_info=True)
         return False, f"Failed to update show in Sonarr: {e}"
+
+def move_sonarr_series(current_path, archive_root_path, show_id):
+    """Updates a series's root folder path and triggers a file move in Sonarr."""
+    if not sonarr_api:
+        return False, "Sonarr not configured."
+    
+    try:
+        # Get the show data
+        show_res = sonarr_api.session.get(f'{sonarr_api.base_url}/api/v3/series/{show_id}')
+        show_res.raise_for_status()
+        show_data = show_res.json()
+        series_title = show_data['title']  # Fixed: use show_data instead of show_res
+        
+        # Update the show_data with the new path and root folder
+        show_data['rootFolderPath'] = archive_root_path
+        show_data["path"] = f"{archive_root_path}/{series_title}"
+        
+        # Use the sonarr_api session to update
+        update_res = sonarr_api.session.put(
+            f'{sonarr_api.base_url}/api/v3/series/{show_id}',
+            json=show_data,
+            params={'moveFiles': 'true'},
+            timeout=60
+        )
+        update_res.raise_for_status()
+        logging.info(f"Successfully moved series '{series_title}' to {archive_root_path}")
+        return True, f"Successfully moved series '{series_title}'"
+    except Exception as e:
+        logger.error(f"Failed to move series ID {show_id}: {e}", exc_info=True)
+        return False, f"Failed to move series: {e}"
 
 
 def get_series_root_folder(series_id: int) -> Optional[str]:

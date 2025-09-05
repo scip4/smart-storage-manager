@@ -30,6 +30,16 @@ scheduler.add_job(func=perform_full_sync, id='initial_sync_job')
 
 # --- NEW: SCHEDULE THE DAILY CLEANUP JOB ---
 # This schedules the cleanup function to run once per day at 3:00 AM server time.
+# scheduler.add_job(
+#     func=cleanup_service.perform_cleanup_actions,
+#     trigger='cron',
+#     hour=3,
+#     minute=0,
+#     id='daily_cleanup_job'
+# )
+
+# --- UPDATE Scheduled Job ---
+# The scheduled job is always a LIVE run (dry_run=False is the default)
 scheduler.add_job(
     func=cleanup_service.perform_cleanup_actions,
     trigger='cron',
@@ -37,6 +47,7 @@ scheduler.add_job(
     minute=0,
     id='daily_cleanup_job'
 )
+
 logging.info("Scheduled daily cleanup job for 3:00 AM.")
 
 
@@ -139,13 +150,30 @@ def save_settings(settings):
 # --- NEW: MANUAL CLEANUP TRIGGER ENDPOINT ---
 @app.route('/api/cleanup/trigger', methods=['POST'])
 def trigger_manual_cleanup():
-    logger.info("Manual cleanup triggered by user.")
+    # logging.info("Manual cleanup triggered by user.")
     
-    # Run in a background thread to return an immediate response
-    cleanup_thread = threading.Thread(target=cleanup_service.perform_cleanup_actions)
+    # # Run in a background thread to return an immediate response
+    # cleanup_thread = threading.Thread(target=cleanup_service.perform_cleanup_actions)
+    # cleanup_thread.start()
+    
+    # return jsonify({"message": "Cleanup task started in the background. Check logs for progress."}), 202
+    data = request.get_json()
+    is_dry_run = data.get('dryRun', False) # Get the dryRun flag from the request
+    run_mode = "Dry Run" if is_dry_run else "Live Run"
+    
+    logging.info(f"Manual cleanup ({run_mode}) triggered by user.")
+    
+    # We run this in the main thread for dry runs to return results directly
+    if is_dry_run:
+        results = cleanup_service.perform_cleanup_actions(dry_run=True)
+        return jsonify({"message": f"Dry run complete. See results below.", "results": results}), 200
+    
+    # For live runs, use a background thread
+    cleanup_thread = threading.Thread(target=cleanup_service.perform_cleanup_actions, args=(False,))
     cleanup_thread.start()
-    
     return jsonify({"message": "Cleanup task started in the background. Check logs for progress."}), 202
+
+
 
 
 
@@ -179,19 +207,25 @@ def get_logs():
 @app.route('/api/root-folders')
 def get_all_root_folders():
     """
-    Returns a dictionary containing lists of root folders from Sonarr and Radarr.
+    Returns a list of root folders for a specific type ('sonarr' or 'radarr').
     """
-    logging.debug("Root folder list requested from UI.")
+    folder_type = request.args.get('type') # e.g., /api/root-folders?type=sonarr
+    logging.debug(f"Root folder list requested from UI for type: {folder_type}")
+    
     try:
-        sonarr_folders = sonarr_service.get_root_folders()
-        radarr_folders = radarr_service.get_root_folders()
-        return jsonify({
-            "sonarr": sonarr_folders,
-            "radarr": radarr_folders
-        })
+        folders = []
+        if folder_type == 'sonarr':
+            folders = sonarr_service.get_root_folders()
+        elif folder_type == 'radarr':
+            folders = radarr_service.get_root_folders()
+        else:
+            return jsonify({"message": "A 'type' query parameter of 'sonarr' or 'radarr' is required."}), 400
+
+        # The response now sends the list directly under a 'folders' key
+        return jsonify({"folders": folders})
     except Exception as e:
-        logger.error(f"Error fetching all root folders: {e}", exc_info=True)
-        return jsonify({"message": "Failed to retrieve root folders."}), 500
+        logger.error(f"Error fetching root folders for type '{folder_type}': {e}", exc_info=True)
+        return jsonify({"message": f"Failed to retrieve {folder_type} root folders."}), 500
 
 
 
@@ -377,6 +411,19 @@ def handle_settings():
         new_settings = request.json
         logging.info("Saving settings.")
         save_settings(new_settings)
+        
+
+
+        # --- NEW: Parse and add the available archive destination folders ---
+        tv_archive_str = os.getenv('TV_ARCHIVE_FOLDERS', '')
+        movie_archive_str = os.getenv('MOVIE_ARCHIVE_FOLDERS', '')
+        
+        new_settings['availableTvArchiveFolders'] = [p.strip() for p in tv_archive_str.split(',') if p.strip()]
+        new_settings['availableMovieArchiveFolders'] = [p.strip() for p in movie_archive_str.split(',') if p.strip()]
+
+        # Also add the available streaming providers (from previous implementation)
+        providers_str = os.getenv('AVAILABLE_STREAMING_PROVIDERS', '')
+        new_settings['availableStreamingProviders'] = [p.strip() for p in providers_str.split(',') if p.strip()]
         
         # Also save environment variables to .env file
         env_vars = [

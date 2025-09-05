@@ -22,7 +22,7 @@ def move_sonarr_series(current_path, archive_root_path, show_id):
 def move_radarr_movie(current_path, archive_root_path, movie_id):
     try:
         logger.info(f"Moving '{current_path}' to '{archive_root_path}'...")
-        radarr_service.move_radarr_movie(current_path,archive_root_path,movie_id)              
+        #radarr_service.move_radarr_movie(current_path,archive_root_path,movie_id)              
         #shutil.move(current_path, archive_root_path)
         logger.info(f"Move successful for '{movie_id}'.")
         return True, archive_root_path
