@@ -19,9 +19,12 @@ def _cache_media_rules(media_list, settings):
         if item.rule == 'keep-forever':
             item.status = 'protected'
             continue
-
+        if item.rootFolderPath is None:
+            item.status = 'Not Monitored'
+            item.reason = 'Media not monitored in Sonarr or Radarr'
+            continue
         # Rule: Archive ended shows
-        if item.type == 'tv' and item.size >= 8 and (item.status == 'ended' or item.status == 'Ended')  and item.rule in ['archive-ended', 'auto-manage']:
+        if item.type == 'tv' and item.size >= 8 and (item.status == 'ended' or item.status == 'Ended') and item.rootFolderPath is not None and item.rule in ['archive-ended', 'auto-manage']:
             #(item.status == 'ended' or item.status == 'Ended') 
             item.status = 'candidate-archive'
             item.reason = 'TV show ended and size is over 8GB'

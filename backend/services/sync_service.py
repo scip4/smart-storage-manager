@@ -46,6 +46,7 @@ def perform_full_sync():
         cache.set('cache_sonarr_folders', sonarr_folders, timeout=CACHE_TIMEOUT * 2)
         radarr_folders = radarr_service.get_root_folders()
         cache.set('cache_radarr_folders', radarr_folders, timeout=CACHE_TIMEOUT * 2)
+
         plex_media_object = plex_service.get_plex_library()
         all_media = plex_media_object.all_media
         streaming_media_for_card = plex_media_object.streaming_media
@@ -56,9 +57,10 @@ def perform_full_sync():
         
         disk_stats_bytes = storage_service.get_combined_disk_usage()
         cache.set('storage_info_raw', disk_stats_bytes, timeout=CACHE_TIMEOUT * 2)
-        candidates = [item.__dict__ for item in analyzed_media if item.status and 'candidate' in item.status]
-        cache.set('canidates_info_raw', candidates, timeout=CACHE_TIMEOUT * 2)
-        potential_savings = sum(c['size'] for c in candidates)
+        candidates = [item for item in analyzed_media if item.status and 'candidate' in item.status]
+        sorted_candidates = sorted(candidates, key=lambda x: x.size, reverse=True)
+        cache.set('canidates_info_raw', [c.__dict__ for c in sorted_candidates], timeout=CACHE_TIMEOUT * 2)
+        potential_savings = sum(c.size for c in candidates)
         cache.set('potential_info_raw', potential_savings, timeout=CACHE_TIMEOUT * 2)
         logger.info("Raw data sources have been fetched and cached.")
         archive_drive_stats = storage_service.get_archive_stats()
@@ -103,10 +105,30 @@ def perform_full_sync():
             sz += series_data['size_gb'] * (1024**3)  # Convert GB to bytes
         dattest = sz / (1024**3)  # Convert back to GB for consistency
         """
-    # Recommended actions: largest ended shows and largest movies on streaming
-        ended_shows = [item for item in analyzed_media
-                    if item.type == 'tv' and item.status == 'ended' and sonarr_summary['seriesSize'][item.sonarrId] >= 55]
+        # --- CORRECTED LOGIC FOR ended_shows ---
+        # Get the detailed map from the Sonarr summary
+        sonarr_series_map = sonarr_summary.get('series_map', {})
+
+        # Find all TV shows from our Plex scan
+        tv_shows_from_plex = [item for item in all_media if item.type == 'tv' and hasattr(item, 'sonarrId')]
+
+        # Filter this list to find shows that Sonarr marks as "ended"
+        ended_shows = []
+        for show in tv_shows_from_plex:
+            sonarr_details = sonarr_series_map.get(show.sonarrId)
+            # Check if the status is literally 'ended'
+            if sonarr_details and sonarr_details.get('status') == 'ended':
+                ended_shows.append(show)
+        
+        # Now, sort the correctly filtered list by size and take the top 5
         ended_shows_sorted = sorted(ended_shows, key=lambda x: x.size, reverse=True)[:5]
+
+
+
+    # Recommended actions: largest ended shows and largest movies on streaming
+        # ended_shows = [item for item in analyzed_media
+        #             if item.type == 'tv' and  item.status == 'candidate-archive'] #sonarr_summary['seriesSize'][item.sonarrId] / (1024**3) >= 55]
+        # ended_shows_sorted = sorted(ended_shows, key=lambda x: x.size, reverse=False)[:5]
     
         streaming_movies = [item for item in analyzed_media
                         if item.type == 'movie' and item.status =='delete-if-streaming']

@@ -3,7 +3,7 @@ import os
 import json
 import logging
 from logging.handlers import RotatingFileHandler
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory # Add send_from_directory
 from flask_cors import CORS
 from dotenv import load_dotenv
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -62,9 +62,24 @@ atexit.register(lambda: scheduler.shutdown())
 
 load_dotenv()
 
-# --- LOGGING SETUP ---
+# --- Define a persistent data directory ---
+# This will point to the '/app/backend/data' folder inside the container
+DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
+if not os.path.exists(DATA_DIR):
+    os.makedirs(DATA_DIR)
+
+# --- Update Flask to serve the built React app from the 'dist' folder ---
+app = Flask(__name__, static_folder='dist', static_url_path='/')
+
+# --- Update Settings and Log paths to use the persistent data directory ---
+SETTINGS_FILE = os.path.join(DATA_DIR, 'settings.json')
+
 def setup_logging():
-    log_file = 'smart_storage.log'
+    log_file = os.path.join(DATA_DIR, 'smart_storage.log')
+
+# --- LOGGING SETUP ---
+#def setup_logging():
+#    log_file = 'smart_storage.log'
     # 5 MB per file, keep last 5 files
     file_handler = RotatingFileHandler(log_file, maxBytes=5*1024*1024, backupCount=5)
     file_handler.setLevel(logging.INFO)
@@ -145,6 +160,18 @@ def get_default_settings():
 
 def save_settings(settings):
     with open(SETTINGS_FILE, 'w') as f: json.dump(settings, f, indent=2)
+
+
+
+# --- Add this route to serve the React app's index.html ---
+# This is crucial for handling browser refreshes and direct navigation in a Single Page App
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve(path):
+    if path != "" and os.path.exists(os.path.join(app.static_folder, path)):
+        return send_from_directory(app.static_folder, path)
+    else:
+        return send_from_directory(app.static_folder, 'index.html')
 
 
 # --- NEW: MANUAL CLEANUP TRIGGER ENDPOINT ---
@@ -629,5 +656,5 @@ def handle_action(media_id):
         
     return jsonify({'status': 'error', 'message': 'Invalid action'}), 400
 
-if __name__ == '__main__':
-    app.run(debug=True, port=5001)
+#if __name__ == '__main__':
+#    app.run(debug=True, port=5001)

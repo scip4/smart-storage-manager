@@ -154,6 +154,13 @@ def _calculate_fresh_summary() -> Dict:
     total_episodes = 0
     seriesData = {}
     seriesSize = {}
+    # --- NEW: Create a detailed map for each series ---
+    series_map = {series['id']: series for series in all_series}
+    
+    # Initialize size and episode counts in our map
+    for series_id in series_map:
+        series_map[series_id]['sizeOnDisk'] = 0
+        series_map[series_id]['episodeFileCount'] = 0
 
     for i, series in enumerate(all_series):
         series_id = series['id']
@@ -162,6 +169,12 @@ def _calculate_fresh_summary() -> Dict:
         series_size = sum(f.get('size', 0) for f in episode_files)
         seriesSize[series_id] = series_size
         series_ep_count = len(episode_files)
+        if series_id in series_map:
+            #file_size = i.get('size', 0)
+            series_map[series_id]['sizeOnDisk'] = series_size
+            series_map[series_id]['episodeFileCount'] = series_ep_count
+            #total_size_bytes += file_size
+            #total_episodes += 1
 
         total_size_bytes += series_size
         total_episodes += series_ep_count
@@ -190,7 +203,8 @@ def _calculate_fresh_summary() -> Dict:
     return {
         'total_gb': round(total_gb, 2),
         'total_episodes': total_episodes, 'total_series': total_series,
-         'seriesData': seriesData, 'seriesSize': seriesSize
+         'seriesData': seriesData, 'seriesSize': seriesSize,
+        'series_map': series_map 
          #, 'total_series': len(series_stats)
     }
 def get_series_title_id_map() -> Dict[str, int]:

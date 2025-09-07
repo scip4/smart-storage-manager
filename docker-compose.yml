@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  smart-storage:
+    # Build the image from the Dockerfile in the current directory
+    build: .
+    # Give the container a friendly name
+    container_name: smart-storage-manager
+    # Ensure the container restarts automatically if it stops or the server reboots
+    restart: unless-stopped
+    ports:
+      # Map port 5001 on your host machine to port 5001 inside the container
+      - "5001:5001"
+    volumes:
+      # --- Configuration & Persistent Data ---
+      # Mount your .env file for configuration. 'ro' means read-only.
+      - ./backend/.env:/app/backend/.env:ro
+      # Create a local 'data' folder to store settings.json and logs persistently.
+      - ./data:/app/backend/data
+
+      # --- Media & Archive Paths (CRITICAL) ---
+      # You MUST map your host media paths to the paths used inside the container.
+      # The path INSIDE the container (right side of ':') MUST MATCH what you put
+      # in your .env file's MOUNT_POINTS and archive folder variables.
+
+      # Example for Linux/macOS/Unraid:
+      - /mnt/user/data/media:/data/media
+      - /mnt/user/data/archive:/data/archive
+
+
+      # Example for Windows (uncomment and adjust drive letters):
+      # - D:\Media:/data/media
+      # - E:\Archive:/data/archive

@@ -168,6 +168,9 @@ def get_plex_library():
 def _get_plex_library():
     plex = get_plex_connection()
     if not plex: return []
+    # If no map is provided, fetch a basic one as a fallback
+    #if sonarr_map is None:
+    #    sonarr_map = {s['id']: s for s in sonarr_service.get_all_series()}
 
     all_media = []
     # Get title-to-ID mappings for shows and movies
@@ -178,6 +181,7 @@ def _get_plex_library():
     radarr_title_id_map = radarr_service.get_movie_title_id_map()
     cached_sonarr_data = cache.get("sonarr_summary_raw")
     cached_radarr_data = cache.get("radarr_summary_raw")
+    sonarr_map = cached_sonarr_data.get('series_map')
 
     for section in plex.library.sections():
         if section.type == 'movie':
@@ -229,6 +233,11 @@ def _get_plex_library():
                         # Get size and status in one call
                         #Cace series Data Test
                         #show_size = 
+                        sonarr_details = sonarr_map.get(sonarr_id)
+                        if sonarr_details:
+                            show_status = sonarr_details.get('status')
+                            size_bytes = sonarr_details.get('sizeOnDisk', 0)
+                            size_gb = size_bytes / (1024**3)
                         show_size = 0
                         if cached_sonarr_data is not None:
                             # Safely get the seriesSize dictionary from cached_sonarr_data

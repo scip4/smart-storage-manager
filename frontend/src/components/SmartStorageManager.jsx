@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { HardDrive, Trash2, Archive, Play, Settings, AlertTriangle, Film, Tv, ExternalLink, Check, X, RefreshCw, FileText, Search, BarChart3, Shield, Zap } from 'lucide-react';
 
-const API_BASE_URL = 'http://localhost:5001/api';
+//const API_BASE_URL = 'http://localhost:5001/api';
+const API_BASE_URL = '/api';
 const ITEMS_PER_PAGE = 10;
 
 // --- Helper Functions & Components ---
@@ -268,13 +269,13 @@ const Dashboard = React.memo(({ loading, error, onOpenStreamingModal, storageDat
                     <StatCard
                         icon={BarChart3}
                         title="Main Used"
-                        value={formatStorage(storageData.used)}
+                        value={formatStorage(storageData?.used || 0)}
                         color="blue"
                     />
                     <StatCard
                         icon={HardDrive}
                         title="Main Available"
-                        value={formatStorage(storageData.available)}
+                        value={formatStorage(storageData?.available || 0)}
                         color="green"
                     />
                     <StatCard
@@ -286,19 +287,19 @@ const Dashboard = React.memo(({ loading, error, onOpenStreamingModal, storageDat
                     <StatCard
                         icon={Archive}
                         title="Archive Total"
-                        value={formatStorage(archiveData.total)}
+                        value={formatStorage(archiveData?.total || 0)}
                         color="slate"
                     />
                     <StatCard
                         icon={Archive}
                         title="Archive Used"
-                        value={formatStorage(archiveData.used)}
+                        value={formatStorage(archiveData?.used || 0)}
                         color="purple"
                     />
                     <StatCard
                         icon={Archive}
                         title="Archive Available"
-                        value={formatStorage(archiveData.available)}
+                        value={formatStorage(archiveData?.available || 0)}
                         color="indigo"
                     />
                 </div>
@@ -344,7 +345,7 @@ const Dashboard = React.memo(({ loading, error, onOpenStreamingModal, storageDat
                 </div>
                 
                 <div className="space-y-4 max-h-96 overflow-y-auto">
-                    {candidates.length > 0 ? candidates.map((item, index) => (
+                    {candidates.length > 0 ? [...candidates].sort((a, b) => b.size - a.size).map((item, index) => (
                         <div key={`${item.type}-${item.id}-${index}`} className="flex justify-between items-center p-4 bg-slate-50 rounded-xl border border-slate-200 hover:bg-slate-100 transition-colors duration-200">
                             <div className="flex-1 space-y-2">
                                 <div className="flex items-center space-x-3">
@@ -553,7 +554,7 @@ const SettingsPanel = React.memo(({ loading, error, connectionStatus,
         }
     };    
     
-    if (loading) return <LoadingSpinner />;
+    if (loading || !storageData || !archiveData) return <LoadingSpinner />;
     if (error) return <ErrorDisplay error={error} onRetry={onRetry} />;
     
         // Filter mappings by type for separate rendering
