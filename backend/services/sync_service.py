@@ -2,30 +2,31 @@
 import json
 import logging
 from .cache_service import cache, CACHE_TIMEOUT
+from .settings_service import load_settings
 from . import plex_service, sonarr_service, storage_service, analysis_service, radarr_service
 from models import StorageInfo # Note the relative import
 
 logger = logging.getLogger(__name__)
-SETTINGS_FILE = '../../settings.json'
-def get_default_settings():
-    return {
-        "autoDeleteAfterDays": 30, "archiveAfterMonths": 6, "keepFreeSpace": 500,
-        "enableAutoActions": False, "checkStreamingAvailability": True,
-        "preferredStreamingServices": [], "archiveFolderPath": "",
-        "tvArchiveFolders": [],
-        "movieArchiveFolders": [],  "archiveMappings": [] 
-    }
+#SETTINGS_FILE = '../../settings.json'
+# def get_default_settings():
+#     return {
+#         "autoDeleteAfterDays": 30, "archiveAfterMonths": 6, "keepFreeSpace": 500,
+#         "enableAutoActions": False, "checkStreamingAvailability": True,
+#         "preferredStreamingServices": [], "archiveFolderPath": "",
+#         "tvArchiveFolders": [],
+#         "movieArchiveFolders": [],  "archiveMappings": [] 
+#     }
 
-def load_settings():
-    try:
-        with open(SETTINGS_FILE, 'r') as f:
-            defaults = get_default_settings()
-            #defaults
-            user_settings = json.load(f)
-            defaults.update(user_settings)
-            return defaults
-    except (FileNotFoundError, json.JSONDecodeError):
-        return get_default_settings()
+# def load_settings():
+#     try:
+#         with open(SETTINGS_FILE, 'r') as f:
+#             defaults = get_default_settings()
+#             #defaults
+#             user_settings = json.load(f)
+#             defaults.update(user_settings)
+#             return defaults
+#     except (FileNotFoundError, json.JSONDecodeError):
+#         return get_default_settings()
 
 def perform_full_sync():
     """
@@ -37,7 +38,9 @@ def perform_full_sync():
     try:
         # Step 1: Fetch raw data from all sources
         # We can give these longer cache timeouts since they are only used here
-        
+        # --- SOLVED: This now uses the same robust logic as the rest of the app ---
+        settings = load_settings()
+        logger.warning(f"Settings TEST  {settings['SONARR_URL']}")
         sonarr_summary = sonarr_service.get_library_summary()
         cache.set('sonarr_summary_raw', sonarr_summary, timeout=CACHE_TIMEOUT * 2)
         radarr_summary = radarr_service.get_library_summary()
@@ -47,12 +50,15 @@ def perform_full_sync():
         radarr_folders = radarr_service.get_root_folders()
         cache.set('cache_radarr_folders', radarr_folders, timeout=CACHE_TIMEOUT * 2)
 
-        plex_media_object = plex_service.get_plex_library()
+        # --- CORRECTED LOGIC FOR ended_shows ---
+        # Get the detailed map from the Sonarr summary
+        sonarr_series_map = sonarr_summary.get('series_map', {})
+        #plex_media_object = plex_service.get_plex_library()
+        plex_media_object = plex_service.get_plex_library(sonarr_map=sonarr_summary.get('series_map', {}))
         all_media = plex_media_object.all_media
         streaming_media_for_card = plex_media_object.streaming_media
 
-        cache.set('plex_library_raw', plex_media_object, timeout=CACHE_TIMEOUT * 2)
-        analyzed_media = analysis_service.apply_rules_to_media(all_media, load_settings())
+        analyzed_media = analysis_service.apply_rules_to_media(all_media, settings)
         cache.set('analyzed_media_raw', analyzed_media, timeout=CACHE_TIMEOUT * 2)
         
         disk_stats_bytes = storage_service.get_combined_disk_usage()
@@ -105,9 +111,7 @@ def perform_full_sync():
             sz += series_data['size_gb'] * (1024**3)  # Convert GB to bytes
         dattest = sz / (1024**3)  # Convert back to GB for consistency
         """
-        # --- CORRECTED LOGIC FOR ended_shows ---
-        # Get the detailed map from the Sonarr summary
-        sonarr_series_map = sonarr_summary.get('series_map', {})
+        
 
         # Find all TV shows from our Plex scan
         tv_shows_from_plex = [item for item in all_media if item.type == 'tv' and hasattr(item, 'sonarrId')]

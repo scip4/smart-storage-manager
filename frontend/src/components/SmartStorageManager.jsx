@@ -281,7 +281,7 @@ const Dashboard = React.memo(({ loading, error, onOpenStreamingModal, storageDat
                     <StatCard
                         icon={Zap}
                         title="Potential Savings"
-                        value={formatStorage(potentialSavings)}
+                        value={formatStorage(potentialSavings || 0)}
                         color="orange"
                     />
                     <StatCard
@@ -554,7 +554,7 @@ const SettingsPanel = React.memo(({ loading, error, connectionStatus,
         }
     };    
     
-    if (loading || !storageData || !archiveData) return <LoadingSpinner />;
+    if (loading) return <LoadingSpinner />;
     if (error) return <ErrorDisplay error={error} onRetry={onRetry} />;
     
         // Filter mappings by type for separate rendering
@@ -647,7 +647,7 @@ const SettingsPanel = React.memo(({ loading, error, connectionStatus,
                     {/* ... Header for Automation Settings ... */}
                 <div className="pt-6 border-t border-slate-200">
                     <h4 className="font-semibold text-slate-700 mb-2">Manual Cleanup</h4>
-                    <p className="text-sm text-slate-500 mb-4">Run the cleanup job immediately or perform a dry run to see what would happen.</p>
+                    <p className="text-sm text-slate-500 mb-4">Run the cleanup job immediately or perform a dry run to see what would happen. <b>Save settings before running cleanup or dry run.</b></p>
                     
                     {/* --- UPDATED: Button is now a dropdown --- */}
                     <div className="flex space-x-3">
@@ -691,7 +691,7 @@ const SettingsPanel = React.memo(({ loading, error, connectionStatus,
                     </div>
                     <div>
                         <h2 className="text-2xl font-bold text-slate-800">Configuration</h2>
-                        <p className="text-slate-600">Application requires restart for changes to take effect</p>
+                       
                     </div>
                 </div>
                 
@@ -942,9 +942,9 @@ const SettingsPanel = React.memo(({ loading, error, connectionStatus,
                 </div>
                 
                 <div className="space-y-4">
-                    {(formSettings.availableStreamingProviders && formSettings.availableStreamingProviders.length > 0) ? (
+                    {(formSettings.AVAILABLE_STREAMING_PROVIDERS && formSettings.AVAILABLE_STREAMING_PROVIDERS.length > 0) ? (
                         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                            {formSettings.availableStreamingProviders.map(provider => (
+                            {formSettings.AVAILABLE_STREAMING_PROVIDERS.map(provider => (
                                 <label key={provider} className="flex items-center space-x-3 p-4 bg-white rounded-lg border border-green-200 cursor-pointer hover:bg-green-50 transition-colors duration-200">
                                     <input
                                         type="checkbox"
@@ -1116,11 +1116,13 @@ const SmartStorageManager = () => {
             setFormSettings(settings);
         }
     }, [settings]);
-
+// --- CORRECTED AND ROBUST fetchDataForTab ---
     const fetchDataForTab = useCallback(async (tab) => {
-        if (tab === 'logs') return;
+        if (tab === 'logs') return; // LogViewer fetches its own data
+        
         setLoading(true);
         setError(null);
+        
         try {
             let response;
             switch (tab) {
@@ -1128,53 +1130,117 @@ const SmartStorageManager = () => {
                     response = await fetch(`${API_BASE_URL}/dashboard`);
                     if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
                     const dashData = await response.json();
-                    setStorageData(dashData.storageData);
-                    setArchiveData(dashData.archiveData);
-                    setCandidates(dashData.candidates);
-                    setPotentialSavings(dashData.potentialSavings);
-                    setLibraryStats(dashData.libraryStats);
+                    
+                    // Set ONLY the state relevant to the dashboard
+                    setStorageData(dashData.storageData || {});
+                    setArchiveData(dashData.archiveData || {});
+                    setCandidates(dashData.candidates || []);
+                    setPotentialSavings(dashData.potentialSavings || 0);
+                    setLibraryStats(dashData.libraryStats || {});
                     setStreamingMediaData(dashData.streamingMedia || []);
                     break;
+
                 case 'content':
                     response = await fetch(`${API_BASE_URL}/content`);
                     if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
-                    setAllContent(await response.json());
+                    
+                    // Set ONLY the state relevant to content management
+                    setAllContent(await response.json() || []);
                     break;
+
                 case 'settings':
-                    const [settingsRes, statusRes] = await Promise.all([
+                    // Fetch all settings data in parallel
+                    const [settingsRes, statusRes, rootFoldersRes] = await Promise.all([
                         fetch(`${API_BASE_URL}/settings`),
-                        fetch(`${API_BASE_URL}/status`)
+                        fetch(`${API_BASE_URL}/status`),
+                        fetch(`${API_BASE_URL}/root-folders/all`)
+                        //fetch(`${API_BASE_URL}/root-folders`) // Using a combined root folder endpoint
                     ]);
-                    if (!settingsRes.ok || !statusRes.ok) throw new Error('Failed to fetch settings data.');
+
+                    if (!settingsRes.ok || !statusRes.ok || !rootFoldersRes.ok) {
+                        throw new Error('Failed to fetch one or more settings resources.');
+                    }
+                    
                     const settingsData = await settingsRes.json();
-                    setFormSettings(settingsData);
-                    setConnectionStatus(await statusRes.json());
+                    const statusData = await statusRes.json();
+                    const rootFoldersData = await rootFoldersRes.json();
                     
-                    // Fetch root folders separately with type parameters
-                    try {
-                        const sonarrRes = await fetch(`${API_BASE_URL}/root-folders?type=sonarr`);
-                        if (!sonarrRes.ok) throw new Error('Failed to fetch Sonarr root folders');
-                        const sonarrData = await sonarrRes.json();
-                        setSonarrRootFolders(sonarrData.folders || []);
-                    } catch (err) {
-                        console.error('Error fetching Sonarr root folders:', err);
-                        setSonarrRootFolders([]);
-                    }
-                    
-                    try {
-                        const radarrRes = await fetch(`${API_BASE_URL}/root-folders?type=radarr`);
-                        if (!radarrRes.ok) throw new Error('Failed to fetch Radarr root folders');
-                        const radarrData = await radarrRes.json();
-                        setRadarrRootFolders(radarrData.folders || []);
-                    } catch (err) {
-                        console.error('Error fetching Radarr root folders:', err);
-                        setRadarrRootFolders([]);
-                    }
+                    // Set ONLY the state relevant to the settings page
+                    setFormSettings(settingsData || {});
+                    setConnectionStatus(statusData || {});
+                    setSonarrRootFolders(rootFoldersData.sonarr || []);
+                    setRadarrRootFolders(rootFoldersData.radarr || []);
                     break;
-                default: break;
+                    
+                default:
+                    // If an unknown tab is selected, do nothing.
+                    break;
             }
-        } catch (err) { setError(err.message); } finally { setLoading(false); }
-    }, []);
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setLoading(false);
+        }
+    }, []); // Empty dependency array is correct here, as it doesn't depend on any props or state from outside.
+
+    // const fetchDataForTab = useCallback(async (tab) => {
+    //     if (tab === 'logs') return;
+    //     setLoading(true);
+    //     setError(null);
+    //     try {
+    //         let response;
+    //         switch (tab) {
+    //             case 'dashboard':
+    //                 response = await fetch(`${API_BASE_URL}/dashboard`);
+    //                 if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+    //                 const dashData = await response.json();
+    //                 setStorageData(dashData.storageData);
+    //                 setArchiveData(dashData.archiveData);
+    //                 setCandidates(dashData.candidates);
+    //                 setPotentialSavings(dashData.potentialSavings);
+    //                 setLibraryStats(dashData.libraryStats);
+    //                 setStreamingMediaData(dashData.streamingMedia || []);
+    //                 break;
+    //             case 'content':
+    //                 response = await fetch(`${API_BASE_URL}/content`);
+    //                 if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+    //                 setAllContent(await response.json());
+    //                 break;
+    //             case 'settings':
+    //                 const [settingsRes, statusRes] = await Promise.all([
+    //                     fetch(`${API_BASE_URL}/settings`),
+    //                     fetch(`${API_BASE_URL}/status`)
+    //                 ]);
+    //                 if (!settingsRes.ok || !statusRes.ok) throw new Error('Failed to fetch settings data.');
+    //                 const settingsData = await settingsRes.json();
+    //                 setFormSettings(settingsData);
+    //                 setConnectionStatus(await statusRes.json());
+                    
+    //                 // Fetch root folders separately with type parameters
+    //                 try {
+    //                     const sonarrRes = await fetch(`${API_BASE_URL}/root-folders?type=sonarr`);
+    //                     if (!sonarrRes.ok) throw new Error('Failed to fetch Sonarr root folders');
+    //                     const sonarrData = await sonarrRes.json();
+    //                     setSonarrRootFolders(sonarrData.folders || []);
+    //                 } catch (err) {
+    //                     console.error('Error fetching Sonarr root folders:', err);
+    //                     setSonarrRootFolders([]);
+    //                 }
+                    
+    //                 try {
+    //                     const radarrRes = await fetch(`${API_BASE_URL}/root-folders?type=radarr`);
+    //                     if (!radarrRes.ok) throw new Error('Failed to fetch Radarr root folders');
+    //                     const radarrData = await radarrRes.json();
+    //                     setRadarrRootFolders(radarrData.folders || []);
+    //                 } catch (err) {
+    //                     console.error('Error fetching Radarr root folders:', err);
+    //                     setRadarrRootFolders([]);
+    //                 }
+    //                 break;
+    //             default: break;
+    //         }
+    //     } catch (err) { setError(err.message); } finally { setLoading(false); }
+    // }, []);
 
     useEffect(() => { fetchDataForTab(activeTab); }, [activeTab, fetchDataForTab]);
 
@@ -1314,9 +1380,9 @@ const SmartStorageManager = () => {
             }
         } catch (err) {
             if (isDryRun) {
-                setDryRunResults([`Error: ${err.message}`]);
+                setDryRunResults([`Error DR: ${err.message}`]);
             } else {
-                setCleanupMessage(`Error: ${err.message}`);
+                setCleanupMessage(`Error CU: ${err.message}`);
             }
         } finally {
             if (isDryRun) {

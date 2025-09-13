@@ -2,6 +2,7 @@
 import shutil
 import os
 import logging
+from .settings_service import load_settings
 from typing import List, Dict
 
 logger = logging.getLogger(__name__)
@@ -23,7 +24,8 @@ def get_drive_usage(path: str) -> Dict:
         logger.error(f"Could not get disk usage for '{path}': {e}", exc_info=True)
         return None
 def get_archive_stats() -> Dict:
-    archive_drive_str= os.getenv('ARCHIVE_DRIVE', '')
+    settings = load_settings()
+    archive_drive_str= settings.get('ARCHIVE_DRIVE', '')
     return get_drive_usage(archive_drive_str)
 
 
@@ -32,8 +34,9 @@ def get_combined_disk_usage() -> Dict:
     Checks paths defined in the .env file and returns their combined disk usage.
     """
     # Parse mount points from environment variables
-    mount_points_str = os.getenv('MOUNT_POINTS', '')
-    paths_to_check = [p.strip() for p in mount_points_str.split(',') if p.strip()]
+    settings = load_settings()
+    mount_points_str = settings.get('MOUNT_POINTS', '')
+    paths_to_check = [p.strip() for p in mount_points_str if p.strip()]
 
     if not paths_to_check:
         logger.warning("MOUNT_POINTS not defined in .env file. Storage stats will be inaccurate. Defaulting to root '/'.")

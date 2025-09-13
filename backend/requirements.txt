@@ -5,6 +5,7 @@ PlexAPI
 requests
 gunicorn
 APScheduler
-cachelib  # For pyradarr/pysonarr, often a dependency
+cachelib
+paramiko  # For pyradarr/pysonarr, often a dependency
 # For Sonarr/Radarr, we'll use direct requests as the libraries
 # can be complex. This gives us more control.

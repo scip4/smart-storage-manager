@@ -7,4 +7,4 @@ from cachelib.simple import SimpleCache
 cache = SimpleCache()
 
 # You can adjust the cache timeout (in seconds) globally here
-CACHE_TIMEOUT = 900  # 15 minutes
+CACHE_TIMEOUT = 21600 # 6 hours

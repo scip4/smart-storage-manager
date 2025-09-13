@@ -2,13 +2,15 @@ import logging
 import os
 import requests
 from typing import Dict, List, Optional
-
+from .settings_service import load_settings
 # --- Caching Integration ---
 # Import the central cache instance and timeout setting for our application
 from .cache_service import cache, CACHE_TIMEOUT
 
 logger = logging.getLogger(__name__)
 
+settings = load_settings()
+logger.warning(f"Settings TEST 2 {settings['SONARR_URL']}")
 class SonarrAPI:
     """Encapsulates direct API communication with the Sonarr server."""
     def __init__(self, base_url: str, api_key: str):
@@ -28,6 +30,7 @@ class SonarrAPI:
             return []        
     def get_all_series(self) -> List[Dict]:
         try:
+            logger.warning(f"sonarr !!!!!!!!!!!!!! {self.base_url}")
             response = self.session.get(f'{self.base_url}/api/v3/series')
             response.raise_for_status()
             return response.json()
@@ -56,19 +59,54 @@ class SonarrAPI:
             return []
 
 # Instantiate the API client for reuse within this module
-BASE_URL = os.getenv('SONARR_URL')
-API_KEY = os.getenv('SONARR_API_KEY')
-sonarr_api = SonarrAPI(BASE_URL, API_KEY) if BASE_URL and API_KEY else None
+# BASE_URL = os.getenv('SONARR_URL')
+# API_KEY = os.getenv('SONARR_API_KEY')
+# logger.warning(f"!!!!!!!{BASE_URL} !!!!!!!{API_KEY}")
 
+# sonarr_api = SonarrAPI(BASE_URL, API_KEY) if BASE_URL and API_KEY else None
+
+
+# 1. Define a global variable to hold our client instance, initialized to None.
+_sonarr_api_client = None
+
+def get_sonarr_api_client():
+    """
+    This function acts as a singleton factory. It creates the SonarrAPI client
+    the first time it's called and returns the existing instance on subsequent calls.
+    This ensures environment variables are loaded before the client is created.
+    """
+    global _sonarr_api_client
+    
+    # If the client hasn't been created yet...
+    if _sonarr_api_client is None:
+        logger.debug("Initializing SonarrAPI client for the first time.")
+        base_url = os.getenv('SONARR_URL')
+        api_key = os.getenv('SONARR_API_KEY')
+        
+        if base_url and api_key:
+            # Create and store the instance
+            _sonarr_api_client = SonarrAPI(base_url, api_key)
+        else:
+            logger.warning("Cannot initialize SonarrAPI client: SONARR_URL or SONARR_API_KEY not found in environment.")
+            # It will remain None, and subsequent calls will correctly fail.
+            
+    return _sonarr_api_client
 
 # --- NEW FUNCTION ---
 def _get_root_folders() -> List[dict]: # Changed return type hint
     """Fetches all configured root folder objects from Sonarr."""
+    
+    # if not sonarr_api:
+    #     logger.warning("Cannot get Sonarr root folders: service not configured.")
+    #     return []
+    """Fetches all configured root folder objects from Sonarr."""
+    sonarr_api = get_sonarr_api_client()
     if not sonarr_api:
         logger.warning("Cannot get Sonarr root folders: service not configured.")
         return []
     try:
         logger.debug("Fetching Sonarr root folders.")
+        #logger.warning(f" .env Sonarr service check {BASE_URL}  and {settings['SONARR_API_KEY']}   and {os.getenv('SONARR_URL')}")
         response = sonarr_api.session.get(f'{sonarr_api.base_url}/api/v3/rootfolder')
         response.raise_for_status()
         # --- FIX: Return the full list of folder objects ---
@@ -89,7 +127,7 @@ def get_root_folders() -> List[dict]:
         return cached_data
     
     # If not in cache, it's a "miss"
-    logger.warning("⚠️  Cache MISS for Sonarr summary. Fetching fresh data...")
+    logger.warning("⚠️  Cache MISS for Sonarr Root folders. Fetching fresh data...")
     
     # Perform the slow calculation
     fresh_data = _get_root_folders()
@@ -107,6 +145,7 @@ def _calculate_fresh_summary() -> Dict:
     Performs the slow, uncached calculation by hitting the Sonarr API.
     This should only be called by the public function on a cache miss.
     """
+    sonarr_api = get_sonarr_api_client() # Get the client instance
     if not sonarr_api:
         return {'total_gb': 0.0, 'total_episodes': 0, 'series_details': []}
 
@@ -216,8 +255,8 @@ def get_series_title_id_map() -> Dict[str, int]:
     """
     cached_series_data = cache.get("Sonarr_all_series")
     #cache.set(cache_test, all_series, timeout=CACHE_TIMEOUT)
-
-
+    sonarr_api = get_sonarr_api_client() # Get the client instance
+    #logger.warning(f"et_series_title_id_map .env Sonarr service check {BASE_URL}  and {settings['SONARR_API_KEY']}   and {os.getenv('SONARR_URL')}")
 
     if cached_series_data is not None:
         logger.info("✅ Cache HIT! Returning Sonarr series from cache.")
@@ -276,6 +315,8 @@ def get_series_size(show_id: int) -> int:
 
 def update_show_root_folder(show_id: int, new_root_folder_path: str):
     """Updates a show in Sonarr and clears the cache to reflect changes."""
+    
+    sonarr_api = get_sonarr_api_client()
     if not sonarr_api: return False, "Sonarr not configured."
     
     try:
@@ -303,8 +344,9 @@ def update_show_root_folder(show_id: int, new_root_folder_path: str):
 
 def unmonitor_show(show_id: int):
     """Updates a show in Sonarr and clears the cache to reflect changes."""
+    sonarr_api = get_sonarr_api_client()
     if not sonarr_api: return False, "Sonarr not configured."
-    
+    #sonarr_api = get_sonarr_api_client() # Get the client instance
     try:
         logger.info(f"Updating Sonarr root folder for show ID {show_id}.")
         show_res = sonarr_api.session.get(f'{sonarr_api.base_url}/api/v3/series/{show_id}')
@@ -330,9 +372,11 @@ def unmonitor_show(show_id: int):
 
 def move_sonarr_series(current_path, archive_root_path, show_id):
     """Updates a series's root folder path and triggers a file move in Sonarr."""
+    
+    sonarr_api = get_sonarr_api_client()
     if not sonarr_api:
         return False, "Sonarr not configured."
-    
+    #sonarr_api = get_sonarr_api_client() # Get the client instance
     try:
         # Get the show data
         show_res = sonarr_api.session.get(f'{sonarr_api.base_url}/api/v3/series/{show_id}')
@@ -361,8 +405,11 @@ def move_sonarr_series(current_path, archive_root_path, show_id):
 
 def get_series_root_folder(series_id: int) -> Optional[str]:
     """Get the root folder path for a specific Sonarr series"""
+    
+    sonarr_api = get_sonarr_api_client()
     if not sonarr_api:
         return None
+    
     try:
         # Fetch series details
         response = sonarr_api.session.get(f"{sonarr_api.base_url}/api/v3/series/{series_id}")

@@ -6,10 +6,10 @@ from typing import Dict, List, Optional
 # --- Caching Integration ---
 # Import the central cache instance and timeout setting for our application
 from .cache_service import cache, CACHE_TIMEOUT
-
+from .settings_service import load_settings
 
 logger = logging.getLogger(__name__)
-
+settings = load_settings()
 # --- Radarr API for Movies ---
 class RadarrAPI:
     def __init__(self, base_url: str, api_key: str):
@@ -58,15 +58,46 @@ class RadarrAPI:
             return []
 
 # --- Instantiate the API client at the module level for reuse ---
-BASE_URL = os.getenv('RADARR_URL')
-API_KEY = os.getenv('RADARR_API_KEY')
+#BASE_URL = os.getenv('RADARR_URL')
+#API_KEY = os.getenv('RADARR_API_KEY')
+BASE_URL = settings['RADARR_URL']  #os.getenv('SONARR_URL')
+API_KEY = settings['RADARR_API_KEY'] #os.getenv('SONARR_API_KEY')
+
+# 1. Define a global variable to hold our client instance, initialized to None.
+_radarr_api_client = None
+
+def get_radarr_api_client():
+    """
+    This function acts as a singleton factory. It creates the SonarrAPI client
+    the first time it's called and returns the existing instance on subsequent calls.
+    This ensures environment variables are loaded before the client is created.
+    """
+    global _radarr_api_client
+    
+    # If the client hasn't been created yet...
+    if _radarr_api_client is None:
+        logger.debug("Initializing SonarrAPI client for the first time.")
+        base_url = os.getenv('RADARR_URL')
+        api_key = os.getenv('RADARR_API_KEY')
+        
+        if base_url and api_key:
+            # Create and store the instance
+            _radarr_api_client = RadarrAPI(base_url, api_key)
+        else:
+            logger.warning("Cannot initialize SonarrAPI client: SONARR_URL or SONARR_API_KEY not found in environment.")
+            # It will remain None, and subsequent calls will correctly fail.
+            
+    return _radarr_api_client
+
+
 
 
 def _get_root_folders() -> List[dict]: # Changed return type hint
     """Fetches all configured root folder objects from Radarr."""
-    if not BASE_URL or not API_KEY:
-        logger.warning("Cannot get Radarr root folders: service not configured.")
-        return []
+    radarr_api = get_radarr_api_client()
+    # if not BASE_URL or not API_KEY:
+    #     logger.warning("Cannot get Radarr root folders: service not configured.")
+    #     return []
     try:
         logger.debug("Fetching Radarr root folders.")
         headers = {'X-Api-Key': API_KEY}
@@ -102,11 +133,11 @@ def get_root_folders() -> List[dict]:
         
     return fresh_data
 
-radarr_api = None
-if BASE_URL and API_KEY:
-    radarr_api = RadarrAPI(BASE_URL, API_KEY)
-else:
-    logger.warning("Radarr URL or API Key not configured in .env file.")
+# radarr_api = None
+# if BASE_URL and API_KEY:
+#     radarr_api = RadarrAPI(BASE_URL, API_KEY)
+# else:
+#     logger.warning("!!!Radarr URL or API Key not configured in .env file.")
 
 # --- Public functions for the rest of the application to use ---
 
@@ -120,6 +151,7 @@ def get_movie_size(movie_id: int) -> int:
     Returns:
         Size on disk in bytes (0 if not found)
     """
+    radarr_api = get_radarr_api_client()
     movie = radarr_api.get_movie_by_id(movie_id)
     if not movie:
         return 0
@@ -129,6 +161,7 @@ def get_movie_size(movie_id: int) -> int:
 
 def get_root_folders() -> List[Dict]:
     """Get all root folders from Radarr"""
+    radarr_api = get_radarr_api_client()
     if not radarr_api:
         return []
     return radarr_api.get_root_folders()
@@ -141,6 +174,7 @@ def get_movie_title_id_map() -> Dict[str, int]:
         Dictionary of {title: id}
     """
     cached_movie_data = cache.get("Radarr_all_movies")
+    radarr_api = get_radarr_api_client()
     #cache.set(cache_test, all_series, timeout=CACHE_TIMEOUT)
 
 
@@ -183,6 +217,7 @@ def _get_library_summary() -> Dict:
     Calculates total size and movie count for the Radarr movie library.
     This uses the optimized method for accuracy by summing movie files.
     """
+    radarr_api = get_radarr_api_client()
     if not radarr_api:
         return {'total_gb': 0.0, 'total_movies': 0}
 
@@ -227,6 +262,7 @@ def _get_library_summary() -> Dict:
 
 def update_movie_root_folder(movie_id: int, new_root_folder_path: str):
     """Updates a movie in Radarr to point to a new root folder."""
+    radarr_api = get_radarr_api_client()
     if not radarr_api:
         return False, "Radarr not configured."
     
@@ -251,6 +287,7 @@ def update_movie_root_folder(movie_id: int, new_root_folder_path: str):
         return False, f"Failed to update movie in Radarr: {e}"
 def get_movie_root_folder(movie_id: int) -> Optional[str]:
     """Get the root folder path for a specific Radarr movie"""
+    radarr_api = get_radarr_api_client()
     if not radarr_api:
         return None
     try:
@@ -267,6 +304,8 @@ def get_movie_root_folder(movie_id: int) -> Optional[str]:
         return None
 def unmonitor_movie(movie_id: int):
     """Updates a show in Sonarr and clears the cache to reflect changes."""
+    
+    radarr_api = get_radarr_api_client()
     if not radarr_api: return False, "Sonarr not configured."
     
     try:
@@ -290,6 +329,8 @@ def unmonitor_movie(movie_id: int):
 
 def move_radarr_movie(current_path, archive_root_path, movie_id):
     """Updates a movie's root folder path and triggers a file move in Radarr."""
+    
+    radarr_api = get_radarr_api_client()
     if not radarr_api:
         return False, "Radarr not configured."
     

@@ -1,11 +1,7 @@
+# backend/services/cleanup_service.py
 import logging
 import os
-import sys
-from pathlib import Path
-
-# Add parent directory to Python path
-sys.path.append(str(Path(__file__).parent.parent))
-from config import load_settings  # Now we can import directly
+from .settings_service import load_settings  # Now we can import directly
 from . import plex_service, sonarr_service, radarr_service, file_service, analysis_service
 from .cache_service import cache
 
@@ -13,65 +9,69 @@ logger = logging.getLogger(__name__)
 
 def perform_cleanup_actions(dry_run=False):
     """
-    Master function for cleanup. If dry_run is True, it only logs proposed actions.
-    
-    Args:
-        dry_run (bool): If True, no files will be moved or deleted.
-        
-    Returns:
-        A list of log messages detailing the proposed or executed actions.
+    Master function for cleanup. Now with robust error handling.
     """
     run_mode = "DRY RUN" if dry_run else "LIVE RUN"
-    log_messages = [f"--- Starting scheduled cleanup job ({run_mode}) ---"]
+    log_messages = [f"--- Starting cleanup job ({run_mode}) ---"]
     logger.info(log_messages[-1])
     
-    settings = load_settings()
-    if not settings.get('enableAutoActions', False) and not dry_run:
-        msg = "Automatic actions are disabled in settings. Cleanup job exiting."
-        logger.info(msg)
-        log_messages.append(msg)
-        return log_messages
+    try: # --- MASTER TRY/EXCEPT BLOCK ---
+        settings = load_settings()
+        if not settings.get('enableAutoActions', False) and not dry_run:
+            msg = "Automatic actions are disabled in settings. Cleanup job exiting."
+            logger.info(msg)
+            log_messages.append(msg)
+            return log_messages
 
-    try:
         log_messages.append("Fetching latest library data for cleanup analysis...")
-        logger.info(log_messages[-1])
-        all_media = plex_service._get_plex_library().all_media
+        plex_media_object = plex_service._get_plex_library()
         
+        # --- Safety Check: Ensure plex_media_object is valid ---
+        if not plex_media_object or not hasattr(plex_media_object, 'all_media'):
+             raise ValueError("Failed to retrieve a valid media object from Plex service.")
+
+        all_media = plex_media_object.all_media
         analyzed_media = analysis_service.apply_rules_to_media(all_media, settings)
-        sonarr_title_id_map = sonarr_service.get_series_title_id_map()
-        radarr_title_id_map = radarr_service.get_movie_title_id_map() #item_to_action.get('id', f"ID {media_id}")
-        # Step 2: Filter for items that are candidates for an action.
-        candidates = [item for item in analyzed_media if item.status and 'candidate' in item.status]
+        candidates = [item for item in analyzed_media if getattr(item, 'status', None) and 'candidate' in item.status]
 
         if not candidates:
-            logger.info("No cleanup candidates found. Job finished.")
-            return
+            msg = "No cleanup candidates found. Job finished."
+            logger.info(msg)
+            log_messages.append(msg)
+            return log_messages
 
-        logger.warning(f"Found {len(candidates)} candidates for automated cleanup.")
-
-        # Step 3: Load archive mappings and create a quick lookup dictionary.
-        # Normalize paths for reliable matching.
-        archive_mappings = settings.get('archiveMappings', [])
-        mapping_dict = {
-            os.path.normpath(m['source']): os.path.normpath(m['destination'])
-            for m in archive_mappings if m.get('source') and m.get('destination')
-        }
-
+        msg = f"Found {len(candidates)} candidates for automated cleanup."
+        logger.warning(msg)
+        log_messages.append(msg)
+        
+        mapping_dict = {os.path.normpath(m['source']): os.path.normpath(m['destination']) for m in settings.get('archiveMappings', [])}
         success_count = 0
-        for item in candidates:
-            if item.status == 'candidate-archive':
-                ####Add condition to check root folder path if show is in plex but not sonarr or radarr
 
-                destination_path = mapping_dict.get(os.path.normpath(item.rootFolderPath))
+        for item in candidates:
+            # --- Defensive attribute access using getattr ---
+            item_title = getattr(item, 'title', 'Unknown Title')
+            
+            if item.status == 'candidate-archive':
+                item_root_path = getattr(item, 'rootFolderPath', None)
+                item_file_path = getattr(item, 'filePath', None)
+
+                if not item_root_path or not item_file_path:
+                    msg = f"[SKIP] Cannot archive '{item_title}': Item is missing critical path information."
+                    logger.error(msg)
+                    log_messages.append(msg)
+                    continue
+                rootpath = item_root_path.split('/')
+                destination_path = mapping_dict.get(os.path.normpath("/" + rootpath[1]))
+                #destination_path = mapping_dict.get(os.path.normpath(item_root_path))
                 if not destination_path:
-                    msg = f"[SKIP] Cannot archive '{item.title}': No archive mapping found for source folder '{item.rootFolderPath}'."
+                    msg = f"[SKIP] Cannot archive '{item_title}': No mapping for source '{item_root_path}'."
                     logger.error(msg)
                     log_messages.append(msg)
                     continue
 
-                log_messages.append(f"[ARCHIVE] Proposing to move '{item.title}' to '{destination_path}'.")
+                log_messages.append(f"[ARCHIVE] Proposing to move '{item_title}' to '{destination_path}'.")
                 if not dry_run:
-                
+                    # ... (live run archive logic) ...
                     plex_folder_path = os.path.dirname(item.filePath)
                     
                     
@@ -96,11 +96,12 @@ def perform_cleanup_actions(dry_run=False):
                         #radarr_service.update_movie_root_folder(item.radarrId, move_result)
                     else:
                         logger.error(f"Failed to complete archive for '{item_title}'. Move operation failed: {move_result}")
-
-            # --- Handle Deletion Candidates ---
+                    pass
+            
             elif item.status == 'candidate-delete':
-                logger.warning(f"DELETING '{item.title}' (Plex ID: {item.id})...")
+                log_messages.append(f"[DELETE] Proposing to delete '{item_title}'.")
                 if not dry_run:
+                    # ... (live run delete logic) ...
                     logger.warning(f"EXECUTING DELETE on '{item.title}'...")
                     success, msg = plex_service.delete_media_from_plex(item.id)
                     #if success: success_count += 1                  
@@ -115,22 +116,16 @@ def perform_cleanup_actions(dry_run=False):
                             #radarr_service.unmonitor_movie(item.radarrId) # Assumes this function exists
                     else:
                         logger.error(f"Failed to delete '{item_title}': {msg}")
+                    pass
 
-        # Step 4: After actions are done, invalidate caches so the UI reflects changes.
-        if success_count > 0 and not dry_run:
-            logger.info(f"Cleanup actions performed on {success_count} item(s). Clearing data caches.")
-            cache.delete('dashboard_data')
-            cache.delete('plex_media_data_full')
-            cache.delete('sonarr_library_summary')
-            # Add other cache keys here if you have them (e.g., 'radarr_library_summary')
-            
-        final_msg = f"--- Cleanup job finished ({run_mode}). Processed {success_count if not dry_run else '0'}/{len(candidates)} items. ---"
+        final_msg = f"--- Cleanup job finished ({run_mode}). Proposed actions for {len(candidates)} items. ---"
         logger.info(final_msg)
         log_messages.append(final_msg)
         return log_messages
 
     except Exception as e:
-        msg = f"An unexpected error occurred during the cleanup job: {e}"
+        # Catch any unexpected error during the process
+        msg = f"FATAL ERROR during cleanup job: {e}"
         logger.error(msg, exc_info=True)
         log_messages.append(msg)
         return log_messages
